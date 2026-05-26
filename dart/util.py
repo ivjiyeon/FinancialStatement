@@ -233,10 +233,10 @@ def _clean_financial_df(df):
 
     # Define columns to keep based on the financial_statements table schema
     cols_to_keep = [
-        'rcept_no', 'bsns_year', 'corp_code', 'stock_code', 'reprt_code', 
+        'rcept_no', 'bsns_year', 'corp_code', 'stock_code', 'reprt_code',
         'sj_div', 'fs_div', 'fs_nm', 'sj_nm', 'account_id', 'account_nm',
-        'account_detail', 'thstrm_nm', 'thstrm_dt', 'thstrm_amount',
-        'thstrm_add_amount', 'ord', 'currency'
+        'thstrm_amount',
+        'thstrm_add_amount', 'currency'
     ]
     
     # Filter DataFrame to keep only relevant columns
@@ -270,42 +270,16 @@ def get_db_connection(db_path):
     return sqlite3.connect(db_path)
 
 def insert_financial_data(conn, df, table_name):
-    """Inserts or updates financial data into the specified table."""
+    """Inserts or updates financial data into the specified tables: statement_metadata and financial_statement_items."""
     if df.empty:
         return
 
     cursor = conn.cursor()
 
-    # If inserting into financial statement tables, check if the report already exists
-    if table_name == 'financial_statements':
-        if not df.empty:
-            sample_row = df.iloc[0]
-            corp_code = sample_row['corp_code']
-            bsns_year = int(sample_row['bsns_year']) # Ensure bsns_year is integer for comparison
-            reprt_code = sample_row['reprt_code']
-            sj_div = sample_row['sj_div']
-            # For combined financial_statements table, primary key check includes sj_div
-
-            # Check if any record with this combination already exists
-            cursor.execute(f"""
-                SELECT 1 FROM financial_statements
-                WHERE corp_code = ? AND bsns_year = ? AND reprt_code = ? AND sj_div = ?
-                LIMIT 1
-            """, (corp_code, bsns_year, reprt_code, sj_div))
-            
-            if cursor.fetchone():
-                logging.info(f"Skipping insertion for {corp_code}, year {bsns_year}, report {reprt_code}, sj_div {sj_div} in financial_statements as it already exists.")
-                return # Skip insertion for this entire report
-
-    columns = ', '.join(df.columns)
-    placeholders = ', '.join(['?' for _ in df.columns])
-
-    # Construct the ON CONFLICT clause for UPSERT (INSERT OR REPLACE)
-    # Assuming the PRIMARY KEY for financial tables is (corp_code, bsns_year, reprt_code, sj_div, account_id)
-    # This will replace existing rows with the same primary key.
-    
     if table_name == 'company_info':
-         insert_sql = f'''
+        columns = ', '.join(df.columns)
+        placeholders = ', '.join(['?' for _ in df.columns])
+        insert_sql = f'''
             INSERT INTO {table_name} ({columns})
             VALUES ({placeholders})
             ON CONFLICT(corp_code) DO UPDATE SET
@@ -315,39 +289,79 @@ def insert_financial_data(conn, df, table_name):
                 modify_date = EXCLUDED.modify_date,
                 corp_eng_name = EXCLUDED.corp_eng_name
         '''
-    else: # financial_statements
-        insert_sql = f'''
-            INSERT INTO financial_statements ({columns})
-            VALUES ({placeholders})
-            ON CONFLICT(corp_code, bsns_year, reprt_code, sj_div, account_id) DO UPDATE SET
-                rcept_no = EXCLUDED.rcept_no,
-                fs_div = EXCLUDED.fs_div,
-                fs_nm = EXCLUDED.fs_nm,
-                sj_nm = EXCLUDED.sj_nm,
-                account_nm = EXCLUDED.account_nm,
-                account_detail = EXCLUDED.account_detail,
-                thstrm_nm = EXCLUDED.thstrm_nm,
-                thstrm_dt = EXCLUDED.thstrm_dt,
-                thstrm_amount = EXCLUDED.thstrm_amount,
-                thstrm_add_amount = EXCLUDED.thstrm_add_amount,
-                ord = EXCLUDED.ord,
-                currency = EXCLUDED.currency
-        '''
-    
-    try:
-        for _, row in df.iterrows():
-            cursor.execute(insert_sql, tuple(row))
-        conn.commit()
-        logging.debug(f"Successfully inserted/updated {len(df)} rows into {table_name}.")
-    except sqlite3.Error as e:
-        logging.error(f"Error inserting into {table_name}: {e}")
+        try:
+            for _, row in df.iterrows():
+                cursor.execute(insert_sql, tuple(row))
+            conn.commit()
+            logging.debug(f"Successfully inserted/updated {len(df)} rows into {table_name}.")
+        except sqlite3.Error as e:
+            logging.error(f"Error inserting into {table_name}: {e}")
+
+    elif table_name == 'financial_statements': # This now implies inserting into the new structure
+        # Extract unique metadata for statement_metadata table
+        metadata_cols = ['rcept_no', 'bsns_year', 'corp_code', 'stock_code', 'reprt_code', 'sj_div', 'fs_div', 'fs_nm', 'currency']
+        metadata_df = df[metadata_cols].drop_duplicates(subset=['corp_code', 'bsns_year', 'reprt_code', 'sj_div'])
+        
+        if not metadata_df.empty:
+            meta_columns = ', '.join(metadata_df.columns)
+            meta_placeholders = ', '.join(['?' for _ in metadata_df.columns])
+            meta_insert_sql = f'''
+                INSERT INTO statement_metadata ({meta_columns})
+                VALUES ({meta_placeholders})
+                ON CONFLICT(corp_code, bsns_year, reprt_code, sj_div) DO UPDATE SET
+                    rcept_no = EXCLUDED.rcept_no,
+                    stock_code = EXCLUDED.stock_code,
+                    fs_div = EXCLUDED.fs_div,
+                    fs_nm = EXCLUDED.fs_nm,
+                    currency = EXCLUDED.currency
+            '''
+            try:
+                for _, row in metadata_df.iterrows():
+                    cursor.execute(meta_insert_sql, tuple(row))
+                conn.commit()
+                logging.debug(f"Successfully inserted/updated {len(metadata_df)} rows into statement_metadata.")
+            except sqlite3.Error as e:
+                logging.error(f"Error inserting into statement_metadata: {e}")
+
+        # Extract item data for financial_statement_items table
+        item_cols = [
+            'corp_code', 'bsns_year', 'reprt_code', 'sj_div', 'account_id', 'account_nm',
+            'thstrm_amount', 'thstrm_add_amount'
+        ]
+        items_df = df[item_cols].copy()
+
+        if not items_df.empty:
+            item_columns = ', '.join(items_df.columns)
+            item_placeholders = ', '.join(['?' for _ in items_df.columns])
+            item_insert_sql = f'''
+                INSERT INTO financial_statement_items ({item_columns})
+                VALUES ({item_placeholders})
+                ON CONFLICT(corp_code, bsns_year, reprt_code, sj_div, account_id) DO UPDATE SET
+                    account_nm = EXCLUDED.account_nm,
+                    account_detail = EXCLUDED.account_detail,
+                    thstrm_nm = EXCLUDED.thstrm_nm,
+                    thstrm_dt = EXCLUDED.thstrm_dt,
+                    thstrm_amount = EXCLUDED.thstrm_amount,
+                    thstrm_add_amount = EXCLUDED.thstrm_add_amount,
+                    ord = EXCLUDED.ord
+            '''
+            try:
+                for _, row in items_df.iterrows():
+                    cursor.execute(item_insert_sql, tuple(row))
+                conn.commit()
+                logging.debug(f"Successfully inserted/updated {len(items_df)} rows into financial_statement_items.")
+            except sqlite3.Error as e:
+                logging.error(f"Error inserting into financial_statement_items: {e}")
+
+    else:
+        logging.warning(f"Unknown table_name: {table_name}. Data not inserted.")
 
 def init_db(db_path):
     conn = None
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        # Create company_info table if it doesn't exist (if not already created by another script)
+        # Create company_info table if it doesn't exist
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS company_info (
                 corp_code TEXT PRIMARY KEY,
@@ -357,17 +371,28 @@ def init_db(db_path):
                 corp_eng_name TEXT
             )
         ''')
+        # Create statement_metadata table if it doesn't exist
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS financial_statements (
+            CREATE TABLE IF NOT EXISTS statement_metadata (
                 rcept_no TEXT,
                 bsns_year INTEGER,
                 corp_code TEXT,
                 stock_code TEXT,
                 reprt_code TEXT,
-                sj_div TEXT,
-                fs_div TEXT,         -- Financial Statement division (e.g., 'CFS', 'OFS')
+                sj_div TEXT,         -- 재무제표 구분 (예: 'BS', 'IS', 'CFS')
+                fs_div TEXT,         -- Financial Statement division (예: 'OFS', 'CFS')
                 fs_nm TEXT,
-                sj_nm TEXT,
+                currency TEXT,
+                PRIMARY KEY (corp_code, bsns_year, reprt_code, sj_div)
+            )
+        ''')
+        # Create financial_statement_items table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS financial_statement_items (
+                corp_code TEXT,
+                bsns_year INTEGER,
+                reprt_code TEXT,
+                sj_div TEXT,         -- 재무제표 구분 (예: 'BS', 'IS', 'CFS')
                 account_id TEXT,
                 account_nm TEXT,
                 account_detail TEXT,
@@ -376,8 +401,8 @@ def init_db(db_path):
                 thstrm_amount INTEGER,
                 thstrm_add_amount INTEGER,
                 ord INTEGER,
-                currency TEXT,
-                PRIMARY KEY (corp_code, bsns_year, reprt_code, sj_div, account_id)
+                PRIMARY KEY (corp_code, bsns_year, reprt_code, sj_div, account_id),
+                FOREIGN KEY (corp_code, bsns_year, reprt_code, sj_div) REFERENCES statement_metadata(corp_code, bsns_year, reprt_code, sj_div)
             )
         ''')
         conn.commit()
