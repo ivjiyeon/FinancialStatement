@@ -272,7 +272,32 @@ class FinancialAnalyzer:
             return pd.DataFrame(), stage1_passed_corp_codes, stage2_passed_corp_codes, []
 
         logging.info(f"Identified {len(stage3_filtered_companies)} potentially undervalued companies based on systematic criteria.")
+        self.save_filtered_companies(stage2_passed_corp_codes, analysis_df['bsns_year'].iloc[0], analysis_df['reprt_code'].iloc[0])
         return stage3_filtered_companies, stage1_passed_corp_codes, stage2_passed_corp_codes, stage3_passed_corp_codes
+
+    def save_filtered_companies(self, corp_codes, bsns_year, reprt_code):
+        logging.info(f"Saving {len(corp_codes)} filtered companies to database for {bsns_year}-{reprt_code}...")
+        with self._get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS filtered_companies (
+                    corp_code TEXT NOT NULL,
+                    bsns_year INTEGER NOT NULL,
+                    reprt_code TEXT NOT NULL,
+                    analysis_date TEXT NOT NULL,
+                    PRIMARY KEY (corp_code, bsns_year, reprt_code)
+                )
+            """)
+            conn.commit()
+
+            insert_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for corp_code in corp_codes:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO filtered_companies (corp_code, bsns_year, reprt_code, analysis_date)
+                    VALUES (?, ?, ?, ?)
+                """, (corp_code, bsns_year, reprt_code, insert_date))
+            conn.commit()
+        logging.info("Filtered companies saved successfully.")
 
 def main():
     PROJECT_ROOT = '/home/ivjiyeonb/projects/financial_statement/'

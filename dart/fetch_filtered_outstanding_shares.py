@@ -13,6 +13,9 @@ def main():
     krx_id = os.getenv('KRX_ID')
     krx_pw = os.getenv('KRX_PW')
 
+    logging.info(f"[Parent] KRX_ID (from os.getenv): {krx_id[:3]}...{krx_id[-3:] if krx_id else None}") # Masked for security
+    logging.info(f"[Parent] KRX_PW (from os.getenv): {krx_pw[:3]}...{krx_pw[-3:] if krx_pw else None}") # Masked for security
+
     if not krx_id or not krx_pw:
         logging.error("KRX_ID or KRX_PW not found in environment variables. Please set them in the .env file.")
         return # Exit if credentials are not found

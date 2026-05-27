@@ -54,10 +54,16 @@ def get_outstanding_shares_pykrx(stock_code, trade_date_str):
 def main():
     # Load environment variables (for KRX_ID/PW if pykrx requires them internally)
     # This script will be run from project root context, so .env is there.
-    load_dotenv() 
+    # load_dotenv() # Credentials now passed from parent process
 
-    if len(sys.argv) != 3:
-        logging.error("Usage: python get_outstanding_shares_krx.py <input_json_path> <output_json_path>")
+    # Debugging: check KRX credentials received from parent
+    krx_id_child = os.getenv('KRX_ID')
+    krx_pw_child = os.getenv('KRX_PW')
+    logging.info(f"[Child] KRX_ID (from os.getenv): {krx_id_child[:3]}...{krx_id_child[-3:] if krx_id_child else None}")
+    logging.info(f"[Child] KRX_PW (from os.getenv): {krx_pw_child[:3]}...{krx_pw_child[-3:] if krx_pw_child else None}")
+
+    if not krx_id_child or not krx_pw_child:
+        logging.error("KRX_ID or KRX_PW not found in child script's environment. Exiting.")
         sys.exit(1)
 
     input_json_path = sys.argv[1]
