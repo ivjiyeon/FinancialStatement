@@ -27,7 +27,7 @@ deactivate # Deactivate venv_dart
 # 3. Analyze and identify undervalued companies (Stage 1 & 2 Filtering)
 echo "Running scripts/analyze_and_identify_undervalued.py (Stage 1 & 2)..."
 source "${VENV_DART}/bin/activate"
-python3 "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py"
+python3 "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 1_2
 deactivate # Deactivate venv_dart
 
 # 4. Fetch stock prices and outstanding shares for Stage 1&2 filtered companies
@@ -41,7 +41,7 @@ deactivate # Deactivate venv_dart
 # 5. Analyze and identify undervalued companies (Stage 3 Filtering with PER, PBR, ROE)
 echo "Running scripts/analyze_and_identify_undervalued.py (Stage 3)..."
 source "${VENV_DART}/bin/activate"
-python3 "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py"
+python3 "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 3
 deactivate # Deactivate venv_dart
 
 echo "All financial analysis processes completed successfully."

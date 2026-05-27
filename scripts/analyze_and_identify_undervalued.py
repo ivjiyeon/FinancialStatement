@@ -3,6 +3,7 @@ import os
 import sqlite3
 import pandas as pd
 import logging
+import argparse
 from datetime import datetime
 
 # Dynamically add the project root to sys.path
@@ -233,20 +234,19 @@ class FinancialAnalyzer:
 
 
 
-    def identify_undervalued_companies(self, analysis_df):
-        logging.info("Identifying undervalued companies with updated criteria...")
+    def _apply_stage1_and_2_filters(self, analysis_df):
+        logging.info("Applying Stage 1 & 2 filters...")
         if analysis_df.empty:
-            logging.warning("Analysis DataFrame is empty, cannot identify undervalued companies.")
-            return pd.DataFrame(), [], [], [] # Return empty list for corp_codes
+            logging.warning("Analysis DataFrame is empty, cannot apply Stage 1 & 2 filters.")
+            return pd.DataFrame()
 
         # Drop rows where essential ratios cannot be calculated (e.g., due to missing base values)
-        # For now, let's focus on D_E_Ratio, Current_Ratio, ROE, Operating_Cash_Flow
         initial_companies = analysis_df.dropna(subset=['D_E_Ratio', 'Current_Ratio', 'ROE', 'Operating_Cash_Flow'])
         logging.info(f"Initial candidates after dropping NA for key ratios: {len(initial_companies)} companies.")
-        
+
         if initial_companies.empty:
-            logging.info("No companies remain after dropping NA for essential ratios.")
-            return pd.DataFrame(), [], [], []
+            logging.info("No companies remain after dropping NA for essential ratios for Stage 1 & 2.")
+            return pd.DataFrame()
 
         # --- Stage 1: Financial Health Check ---
         logging.info("Applying Stage 1: Financial Health Check (Debt-to-Equity <= 100%, Current Ratio >= 150%)...")
@@ -254,71 +254,81 @@ class FinancialAnalyzer:
             (initial_companies['D_E_Ratio'] <= 1.0) &  # 부채비율 100% 이하
             (initial_companies['Current_Ratio'] >= 1.5) # 유동비율 150% 이상
         ].copy()
-        stage1_passed_corp_codes = stage1_filtered_companies['corp_code'].tolist()
-        logging.info(f"Stage 1 passed: {len(stage1_passed_corp_codes)} companies.")
+        logging.info(f"Stage 1 passed: {len(stage1_filtered_companies)} companies.")
 
         if stage1_filtered_companies.empty:
             logging.info("No companies passed Stage 1 financial health check.")
-            return pd.DataFrame(), [], [], []
+            return pd.DataFrame()
 
         # --- Stage 2: Profitability and Asset Value Verification ---
         logging.info("Applying Stage 2: Profitability and Asset Value Verification (ROE >= 10%, Operating Cash Flow > 0)...")
-        # Note on "꾸준히 상승/증가": This currently only checks the latest period. For multi-period check, historical data is needed.
         stage2_filtered_companies = stage1_filtered_companies[
             (stage1_filtered_companies['ROE'] >= 0.10) & # ROE 10% 이상
             (stage1_filtered_companies['Operating_Cash_Flow'] > 0) # 영업활동 현금흐름 양수
         ].copy()
-        stage2_passed_corp_codes = stage2_filtered_companies['corp_code'].tolist()
-        logging.info(f"Stage 2 passed: {len(stage2_passed_corp_codes)} companies.")
+        logging.info(f"Stage 2 passed: {len(stage2_filtered_companies)} companies.")
 
-        if stage2_filtered_companies.empty:
-            logging.info("No companies passed Stage 2 profitability and asset value verification.")
-            # If no companies pass Stage 2, nothing to save, and return empty lists for subsequent stages.
-            return pd.DataFrame(), stage1_passed_corp_codes, [], []
+        return stage2_filtered_companies
 
-        # --- Stage 3: Valuation Metrics (PER, PBR, ROE) ---
-        logging.info("Applying Stage 3: Valuation Metrics (P/E > 0, P/E < 15.0, P/B > 0, P/B < 1.5, ROE > 10.0)...")
-        
+    def _load_filtered_companies_for_stage3(self, bsns_year, reprt_code):
+        logging.info(f"Loading companies from filtered_companies table for {bsns_year}-{reprt_code}...")
+        with self._get_db_connection() as conn:
+            query = f"""
+                SELECT
+                    fc.corp_code,
+                    ci.stock_code,
+                    ci.corp_name,
+                    fc.bsns_year,
+                    fc.reprt_code
+                FROM filtered_companies AS fc
+                JOIN company_info AS ci ON fc.corp_code = ci.corp_code
+                WHERE fc.bsns_year = {bsns_year} AND fc.reprt_code = '{reprt_code}'
+            """
+            filtered_companies_df = pd.read_sql_query(query, conn, dtype={
+                'corp_code': str,
+                'stock_code': str,
+                'corp_name': str,
+                'bsns_year': 'int16',
+                'reprt_code': str
+            })
+        logging.info(f"Loaded {len(filtered_companies_df)} companies for Stage 3 from filtered_companies table.")
+        return filtered_companies_df
+
+    def _apply_stage3_filters(self, analysis_df):
+        logging.info("Applying Stage 3: Valuation Metrics (P/E > 0, P/E < 15.0, P/B > 0, P/B < 1.5)...")
+        if analysis_df.empty:
+            logging.warning("Analysis DataFrame is empty, cannot apply Stage 3 filters.")
+            return pd.DataFrame()
+
         # Companies failing Stage 3 will be logged
-        failed_stage3_per = stage2_filtered_companies[
-            ~((stage2_filtered_companies['PER'] > 0) & (stage2_filtered_companies['PER'] < 15.0))
+        failed_stage3_per = analysis_df[
+            ~((analysis_df['PER'].notna()) & (analysis_df['PER'] > 0) & (analysis_df['PER'] < 15.0))
         ]
         for idx, row in failed_stage3_per.iterrows():
-            logging.info(f"Company {row['corp_name']} (PER={row['PER']:.2f}) failed Stage 3 (P/E not within 0-15).")
+            logging.info(f"Company {row['corp_name']} (PER={row.get('PER', 'N/A'):.2f}) failed Stage 3 (P/E not within 0-15 or N/A).")
 
-        failed_stage3_pbr = stage2_filtered_companies[
-            ~((stage2_filtered_companies['PBR'] > 0) & (stage2_filtered_companies['PBR'] < 1.5))
+        failed_stage3_pbr = analysis_df[
+            ~((analysis_df['PBR'].notna()) & (analysis_df['PBR'] > 0) & (analysis_df['PBR'] < 1.5))
         ]
         for idx, row in failed_stage3_pbr.iterrows():
-            logging.info(f"Company {row['corp_name']} (PBR={row['PBR']:.2f}) failed Stage 3 (P/B not within 0-1.5).")
+            logging.info(f"Company {row['corp_name']} (PBR={row.get('PBR', 'N/A'):.2f}) failed Stage 3 (P/B not within 0-1.5 or N/A).")
 
-        # ROE > 10.0 (or 0.10) is already applied in Stage 2.
-        # No need to explicitly check it again here as stage2_filtered_companies already satisfies it.
-        
-        stage3_filtered_companies = stage2_filtered_companies[
-            (stage2_filtered_companies['PER'] > 0) &
-            (stage2_filtered_companies['PER'] < 15.0) &
-            (stage2_filtered_companies['PBR'] > 0) &
-            (stage2_filtered_companies['PBR'] < 1.5)
+        stage3_filtered_companies = analysis_df[
+            (analysis_df['PER'].notna()) & (analysis_df['PER'] > 0) & (analysis_df['PER'] < 15.0) &
+            (analysis_df['PBR'].notna()) & (analysis_df['PBR'] > 0) & (analysis_df['PBR'] < 1.5)
         ].copy()
 
-        stage3_passed_corp_codes = stage3_filtered_companies['corp_code'].tolist()
-        logging.info(f"Stage 3 passed: {len(stage3_passed_corp_codes)} companies.")
-        
-        self.save_filtered_companies(stage3_passed_corp_codes, analysis_df['bsns_year'].iloc[0], analysis_df['reprt_code'].iloc[0])
+        logging.info(f"Stage 3 passed: {len(stage3_filtered_companies)} companies.")
+        return stage3_filtered_companies
 
-        if stage3_filtered_companies.empty:
-            logging.info("No companies remain after Stage 3.")
-            return pd.DataFrame(), stage1_passed_corp_codes, stage2_passed_corp_codes, []
-
-        logging.info(f"Identified {len(stage3_filtered_companies)} potentially undervalued companies based on systematic criteria.")
-        return stage3_filtered_companies, stage1_passed_corp_codes, stage2_passed_corp_codes, stage3_passed_corp_codes
-
-    def save_filtered_companies(self, corp_codes, bsns_year, reprt_code):
+    def save_filtered_companies(self, corp_codes, bsns_year, reprt_code, append=False):
         logging.info(f"Saving {len(corp_codes)} filtered companies to database for {bsns_year}-{reprt_code}...")
         with self._get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DROP TABLE IF EXISTS filtered_companies;") # Correct position
+            if not append: # If not appending, drop table to start fresh (for Stage 1&2 or full run)
+                cursor.execute("DROP TABLE IF EXISTS filtered_companies;")
+                logging.info("Dropped existing filtered_companies table.")
+
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS filtered_companies (
                     corp_code TEXT NOT NULL,
@@ -331,51 +341,92 @@ class FinancialAnalyzer:
             conn.commit()
 
             insert_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logging.info(f"DEBUG: Type of bsns_year before insert: {type(bsns_year)}")
-            logging.info(f"DEBUG: Value of bsns_year before insert: {bsns_year}")
-            for corp_code in corp_codes:
-                cursor.execute("""
-                    INSERT OR REPLACE INTO filtered_companies (corp_code, bsns_year, reprt_code, analysis_date)
-                    VALUES (?, ?, ?, ?)
-                """, (corp_code, int(bsns_year), reprt_code, insert_date)) # CAST TO INT HERE
+            data_to_insert = [(corp_code, int(bsns_year), reprt_code, insert_date) for corp_code in corp_codes]
+            cursor.executemany("""
+                INSERT OR REPLACE INTO filtered_companies (corp_code, bsns_year, reprt_code, analysis_date)
+                VALUES (?, ?, ?, ?)
+            """, data_to_insert)
             conn.commit()
         logging.info("Filtered companies saved successfully.")
 
 def main():
+    parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
+    parser.add_argument('--stage', type=str, choices=['1_2', '3', 'all'], default='all',
+                        help="Specify the analysis stage to run: '1_2' for initial filtering, '3' for valuation metrics, or 'all' for sequential execution.")
+    args = parser.parse_args()
+
     PROJECT_ROOT = '/home/ivjiyeonb/projects/financial_statement/'
     DB_PATH = os.path.join(PROJECT_ROOT, 'data', 'financial_data.db')
-    
+
     # --- Configuration for data fetching ---
-    # This part should ideally be dynamic or passed as arguments for different quarters
-    # For initial testing, let's use 2024 Q3 (11013) as we successfully fetched it.
     TARGET_BSNS_YEAR = 2025
     TARGET_REPRT_CODE = '11011' # 11013 for Q3, 11012 for Q2, 11011 for Q4 (Annual), 11014 for Q1
 
     try:
         analyzer = FinancialAnalyzer(DB_PATH)
-        
-        company_info_df = analyzer.load_company_info()
-        financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
-        
-        # Check if financial_df has 'thstrm_amount' before calculating ratios
-        if 'thstrm_amount' not in financial_df.columns:
-            logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
-            return
 
-        analysis_df = analyzer.calculate_financial_ratios(financial_df, company_info_df)
-        undervalued_companies_df, stage1_codes, stage2_codes, stage3_codes = analyzer.identify_undervalued_companies(analysis_df)
-        
-        if not undervalued_companies_df.empty:
-            logging.info("--- Undervalued Companies Identified (Final List) ---")
-            print(undervalued_companies_df[['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow']].to_string())
-            logging.info(f"\nStage 1 (Financial Health) Passed Companies ({len(stage1_codes)}): {stage1_codes}")
-            logging.info(f"Stage 2 (Profitability/Asset Value) Passed Companies ({len(stage2_codes)}): {stage2_codes}")
-            logging.info(f"Stage 3 (Valuation Metrics) Passed Companies ({len(stage3_codes)}): {stage3_codes}")
-        else:
-            logging.info("No undervalued companies found based on current criteria.")
-            logging.info(f"\nStage 1 (Financial Health) Passed Companies ({len(stage1_codes)}): {stage1_codes}")
-            logging.info(f"Stage 2 (Profitability/Asset Value) Passed Companies ({len(stage2_codes)}): {stage2_codes}")
+        if args.stage == '1_2' or args.stage == 'all':
+            logging.info("--- Running Stage 1 & 2: Financial Health and Profitability Check ---")
+            company_info_df = analyzer.load_company_info()
+            financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+
+            if 'thstrm_amount' not in financial_df.columns:
+                logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
+                return
+
+            analysis_df_all_ratios = analyzer.calculate_financial_ratios(financial_df, company_info_df)
+
+            stage2_filtered_companies = analyzer._apply_stage1_and_2_filters(analysis_df_all_ratios)
+
+            if not stage2_filtered_companies.empty:
+                analyzer.save_filtered_companies(
+                    stage2_filtered_companies['corp_code'].tolist(),
+                    TARGET_BSNS_YEAR,
+                    TARGET_REPRT_CODE,
+                    append=False
+                )
+                logging.info(f"Stage 1 & 2 completed. {len(stage2_filtered_companies)} companies passed and saved to 'filtered_companies' table.")
+            else:
+                logging.info("No companies passed Stage 1 & 2. 'filtered_companies' table might be empty.")
             
+            if args.stage == '1_2':
+                return
+
+        if args.stage == '3' or args.stage == 'all':
+            logging.info("--- Running Stage 3: Valuation Metrics Check ---")
+            companies_for_stage3_df = analyzer._load_filtered_companies_for_stage3(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+
+            if companies_for_stage3_df.empty:
+                logging.info("No companies found in 'filtered_companies' table to apply Stage 3. Make sure Stage 1 & 2 was run first.")
+                return
+            
+            all_financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+            company_info_df = analyzer.load_company_info()
+
+            filtered_corp_codes = companies_for_stage3_df['corp_code'].unique()
+            financial_df_stage3 = all_financial_df[all_financial_df['corp_code'].isin(filtered_corp_codes)]
+
+            if financial_df_stage3.empty:
+                logging.warning("No financial data found for companies loaded for Stage 3.")
+                return
+            
+            analysis_df_stage3 = analyzer.calculate_financial_ratios(financial_df_stage3, company_info_df)
+
+            stage3_final_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
+
+            if not stage3_final_companies_df.empty:
+                analyzer.save_filtered_companies(
+                    stage3_final_companies_df['corp_code'].tolist(),
+                    TARGET_BSNS_YEAR,
+                    TARGET_REPRT_CODE,
+                    append=False
+                )
+                logging.info(f"--- Undervalued Companies Identified (Final List) ---")
+                print(stage3_final_companies_df[['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']].to_string())
+                logging.info(f"\nStage 3 completed. {len(stage3_final_companies_df)} companies passed all stages and saved to 'filtered_companies' table.")
+            else:
+                logging.info("No undervalued companies found based on Stage 3 criteria.")
+
     except FileNotFoundError as e:
         logging.error(e)
     except Exception as e:
