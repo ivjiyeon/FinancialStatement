@@ -42,17 +42,31 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         # Fetch financial statements data
         cursor.execute(f"""
             SELECT
-                liquid_assets_current_liabilities,
-                stock_equity,
-                profit_or_loss_from_operations,
-                net_profit_or_loss
-            FROM financial_statements_data
-            WHERE corp_code = '{corp_code}' AND bsns_year = '{bsns_year}'
+                fsi_profit.thstrm_amount AS net_profit_or_loss,
+                fsi_equity.thstrm_amount AS stock_equity
+            FROM statement_metadata AS sm
+            JOIN financial_statement_items AS fsi_profit
+                ON sm.corp_code = fsi_profit.corp_code
+                AND sm.bsns_year = fsi_profit.bsns_year
+                AND sm.reprt_code = fsi_profit.reprt_code
+                AND sm.sj_div = fsi_profit.sj_div
+            JOIN financial_statement_items AS fsi_equity
+                ON sm.corp_code = fsi_equity.corp_code
+                AND sm.bsns_year = fsi_equity.bsns_year
+                AND sm.reprt_code = fsi_equity.reprt_code
+                AND sm.sj_div = fsi_equity.sj_div
+            WHERE
+                sm.corp_code = '{corp_code}'
+                AND sm.bsns_year = '{bsns_year}'
+                AND fsi_profit.account_id = 'ifrs-full_ProfitLoss'
+                AND fsi_profit.sj_div = 'IS'
+                AND fsi_equity.account_id = 'ifrs-full_Equity'
+                AND fsi_equity.sj_div = 'BS'
         """)
         fs_data = cursor.fetchone()
 
         if outstanding_shares and stck_clpr and fs_data:
-            liquid_assets_current_liabilities, stock_equity, profit_or_loss_from_operations, net_profit_or_loss = fs_data
+            net_profit_or_loss, stock_equity = fs_data
 
             # Calculate PER
             if net_profit_or_loss and outstanding_shares:

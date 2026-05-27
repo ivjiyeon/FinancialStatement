@@ -112,7 +112,7 @@ def main():
     logging.info(f"Determined Report Year: {report_year}, Display Quarter: {display_quarter}, Report Quarter Code: {report_quarter_code}")
 
     # --- Clean old financial data for the determined report period ---
-    delete_old_financial_data(DB_PATH, report_year, report_quarter_code)
+    delete_old_financial_data(DB_PATH, report_year - 2, report_quarter_code)
 
     # --- Load KRX Sector Data ---
     try:
