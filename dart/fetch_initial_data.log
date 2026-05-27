@@ -26550,3 +26550,205 @@
 2026-05-18 12:59:38 - INFO - No CFS financial statements found for 00556712. Trying next fs_div if available.
 2026-05-18 12:59:39 - INFO - Successfully fetched and stored Q4 financial statements for 힘스 (238490).
 2026-05-18 12:59:40 - INFO - Script finished: Initial historical financial statements processed.
+2026-05-27 02:30:12 - INFO - Script started: Fetching initial historical financial statements.
+2026-05-27 02:30:12 - INFO - Database path: /home/ivjiyeonb/projects/financial_statement/dart/../data/financial_data.db
+2026-05-27 02:30:12 - INFO - KRX Sector Data path: /home/ivjiyeonb/projects/financial_statement/dart/../data/krx_sector_data.csv
+2026-05-27 02:30:28 - INFO - Script started: Fetching initial historical financial statements.
+2026-05-27 02:30:28 - INFO - Database path: /home/ivjiyeonb/projects/financial_statement/dart/../data/financial_data.db
+2026-05-27 02:30:28 - INFO - KRX Sector Data path: /home/ivjiyeonb/projects/financial_statement/dart/../data/krx_sector_data.csv
+2026-05-27 02:30:49 - INFO - Script started: Fetching initial historical financial statements.
+2026-05-27 02:30:49 - INFO - Database path: /home/ivjiyeonb/projects/financial_statement/dart/../data/financial_data.db
+2026-05-27 02:30:49 - INFO - KRX Sector Data path: /home/ivjiyeonb/projects/financial_statement/dart/../data/krx_sector_data.csv
+2026-05-27 02:30:49 - INFO - Database tables checked/created successfully.
+2026-05-27 02:30:49 - INFO - Loaded 2769 companies from /home/ivjiyeonb/projects/financial_statement/dart/../data/krx_sector_data.csv
+2026-05-27 02:30:50 - INFO - Loaded 118083 company_info records from DB.
+2026-05-27 02:30:50 - INFO - Found 2656 companies with mapped corp_codes to process.
+2026-05-27 02:30:50 - WARNING - Skipping 113 companies due to missing corp_code. These companies might not be in DART's company_info yet or stock_code mismatch.
+2026-05-27 02:30:50 - INFO - --- Fetching Q3 reports for year 2025 ---
+2026-05-27 02:30:50 - INFO - Processing 1/2656: AJ네트웍스 (095570/00365387) for 2025 Q3
+2026-05-27 02:30:58 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:30:58 - INFO - Successfully fetched and stored Q3 financial statements for AJ네트웍스 (095570).
+2026-05-27 02:30:58 - INFO - Processing 2/2656: AK홀딩스 (006840/00125080) for 2025 Q3
+2026-05-27 02:31:08 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:31:08 - INFO - Successfully fetched and stored Q3 financial statements for AK홀딩스 (006840).
+2026-05-27 02:31:09 - INFO - Processing 3/2656: BGF (027410/00219097) for 2025 Q3
+2026-05-27 02:31:15 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:31:15 - INFO - Successfully fetched and stored Q3 financial statements for BGF (027410).
+2026-05-27 02:31:16 - INFO - Processing 4/2656: BGF리테일 (282330/01263022) for 2025 Q3
+2026-05-27 02:31:21 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:31:21 - INFO - Successfully fetched and stored Q3 financial statements for BGF리테일 (282330).
+2026-05-27 02:31:22 - INFO - Processing 5/2656: BNK금융지주 (138930/00858364) for 2025 Q3
+2026-05-27 02:31:34 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:31:34 - INFO - Successfully fetched and stored Q3 financial statements for BNK금융지주 (138930).
+2026-05-27 02:31:34 - INFO - Processing 6/2656: BYC (001460/00122579) for 2025 Q3
+2026-05-27 02:31:39 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:31:39 - INFO - Successfully fetched and stored Q3 financial statements for BYC (001460).
+2026-05-27 02:31:40 - INFO - Processing 7/2656: CJ (001040/00148540) for 2025 Q3
+2026-05-27 02:31:48 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:31:48 - INFO - Successfully fetched and stored Q3 financial statements for CJ (001040).
+2026-05-27 02:31:49 - INFO - Processing 8/2656: CJ CGV (079160/00303873) for 2025 Q3
+2026-05-27 02:31:55 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:31:55 - INFO - Successfully fetched and stored Q3 financial statements for CJ CGV (079160).
+2026-05-27 02:31:56 - INFO - Processing 9/2656: CJ대한통운 (000120/00113410) for 2025 Q3
+2026-05-27 02:32:03 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:32:03 - INFO - Successfully fetched and stored Q3 financial statements for CJ대한통운 (000120).
+2026-05-27 02:32:04 - INFO - Processing 10/2656: CJ씨푸드 (011150/00129013) for 2025 Q3
+2026-05-27 02:32:07 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:32:07 - INFO - Successfully fetched and stored Q3 financial statements for CJ씨푸드 (011150).
+2026-05-27 02:32:08 - INFO - Processing 11/2656: CJ제일제당 (097950/00635134) for 2025 Q3
+2026-05-27 02:32:17 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:32:17 - INFO - Successfully fetched and stored Q3 financial statements for CJ제일제당 (097950).
+2026-05-27 02:32:17 - INFO - Processing 12/2656: CR홀딩스 (000480/00148984) for 2025 Q3
+2026-05-27 02:32:24 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:32:24 - INFO - Successfully fetched and stored Q3 financial statements for CR홀딩스 (000480).
+2026-05-27 02:32:25 - INFO - Processing 13/2656: CS홀딩스 (000590/00149026) for 2025 Q3
+2026-05-27 02:32:30 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:32:30 - INFO - Successfully fetched and stored Q3 financial statements for CS홀딩스 (000590).
+2026-05-27 02:32:30 - INFO - Processing 14/2656: DB (012030/00163345) for 2025 Q3
+2026-05-27 02:32:36 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:32:36 - INFO - Successfully fetched and stored Q3 financial statements for DB (012030).
+2026-05-27 02:32:36 - INFO - Processing 15/2656: DB손해보험 (005830/00159102) for 2025 Q3
+2026-05-27 02:32:47 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:32:47 - INFO - Successfully fetched and stored Q3 financial statements for DB손해보험 (005830).
+2026-05-27 02:32:48 - INFO - Processing 16/2656: DB증권 (016610/00115694) for 2025 Q3
+2026-05-27 02:32:56 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:32:56 - INFO - Successfully fetched and stored Q3 financial statements for DB증권 (016610).
+2026-05-27 02:32:57 - INFO - Processing 17/2656: DB하이텍 (000990/00160843) for 2025 Q3
+2026-05-27 02:33:05 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:05 - INFO - Successfully fetched and stored Q3 financial statements for DB하이텍 (000990).
+2026-05-27 02:33:06 - INFO - Processing 18/2656: DH오토넥스 (000300/00126089) for 2025 Q3
+2026-05-27 02:33:10 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:10 - INFO - Successfully fetched and stored Q3 financial statements for DH오토넥스 (000300).
+2026-05-27 02:33:10 - INFO - Processing 19/2656: DI동일 (001530/00118345) for 2025 Q3
+2026-05-27 02:33:17 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:17 - INFO - Successfully fetched and stored Q3 financial statements for DI동일 (001530).
+2026-05-27 02:33:18 - INFO - Processing 20/2656: DKME (015590/00108746) for 2025 Q3
+2026-05-27 02:33:22 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:22 - INFO - Successfully fetched and stored Q3 financial statements for DKME (015590).
+2026-05-27 02:33:22 - INFO - Processing 21/2656: DL (000210/00109693) for 2025 Q3
+2026-05-27 02:33:31 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:31 - INFO - Successfully fetched and stored Q3 financial statements for DL (000210).
+2026-05-27 02:33:31 - INFO - Processing 22/2656: DL이앤씨 (375500/01524093) for 2025 Q3
+2026-05-27 02:33:39 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:39 - INFO - Successfully fetched and stored Q3 financial statements for DL이앤씨 (375500).
+2026-05-27 02:33:39 - INFO - Processing 23/2656: DN오토모티브 (007340/00116949) for 2025 Q3
+2026-05-27 02:33:48 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:48 - INFO - Successfully fetched and stored Q3 financial statements for DN오토모티브 (007340).
+2026-05-27 02:33:48 - INFO - Processing 24/2656: DRB동일 (004840/00118266) for 2025 Q3
+2026-05-27 02:33:53 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:53 - INFO - Successfully fetched and stored Q3 financial statements for DRB동일 (004840).
+2026-05-27 02:33:53 - INFO - Processing 25/2656: DSR (155660/00110608) for 2025 Q3
+2026-05-27 02:33:58 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:33:58 - INFO - Successfully fetched and stored Q3 financial statements for DSR (155660).
+2026-05-27 02:33:59 - INFO - Processing 26/2656: DSR제강 (069730/00151298) for 2025 Q3
+2026-05-27 02:34:04 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:34:04 - INFO - Successfully fetched and stored Q3 financial statements for DSR제강 (069730).
+2026-05-27 02:34:05 - INFO - Processing 27/2656: DS단석 (017860/00108612) for 2025 Q3
+2026-05-27 02:34:11 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:34:11 - INFO - Successfully fetched and stored Q3 financial statements for DS단석 (017860).
+2026-05-27 02:34:11 - INFO - Processing 28/2656: DYP (092780/00117726) for 2025 Q3
+2026-05-27 02:34:17 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:34:17 - INFO - Successfully fetched and stored Q3 financial statements for DYP (092780).
+2026-05-27 02:34:18 - INFO - Processing 29/2656: E1 (017940/00165583) for 2025 Q3
+2026-05-27 02:34:25 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:34:25 - INFO - Successfully fetched and stored Q3 financial statements for E1 (017940).
+2026-05-27 02:34:25 - INFO - Processing 30/2656: ESR켄달스퀘어리츠 (365550/01437186) for 2025 Q3
+2026-05-27 02:34:26 - ERROR - DART API Error (fnlttAcnt (CFS)): Status - 013, Message - 조회된 데이타가 없습니다.
+2026-05-27 02:34:26 - INFO - No CFS financial statements found for 01437186. Trying next fs_div if available.
+2026-05-27 02:34:27 - ERROR - DART API Error (fnlttAcnt (OFS)): Status - 013, Message - 조회된 데이타가 없습니다.
+2026-05-27 02:34:27 - INFO - No OFS financial statements found for 01437186. Trying next fs_div if available.
+2026-05-27 02:34:27 - INFO - No Q3 financial statements found for ESR켄달스퀘어리츠 (365550) for 2025.
+2026-05-27 02:34:27 - INFO - Processing 31/2656: F&F (383220/01568413) for 2025 Q3
+2026-05-27 02:34:33 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:34:33 - INFO - Successfully fetched and stored Q3 financial statements for F&F (383220).
+2026-05-27 02:34:33 - INFO - Processing 32/2656: F&F홀딩스 (007700/00126487) for 2025 Q3
+2026-05-27 02:34:40 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:34:40 - INFO - Successfully fetched and stored Q3 financial statements for F&F홀딩스 (007700).
+2026-05-27 02:34:40 - INFO - Processing 33/2656: GKL (114090/00557508) for 2025 Q3
+2026-05-27 02:34:45 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:34:45 - INFO - Successfully fetched and stored Q3 financial statements for GKL (114090).
+2026-05-27 02:34:45 - INFO - Processing 34/2656: GS (078930/00500254) for 2025 Q3
+2026-05-27 02:34:54 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:34:54 - INFO - Successfully fetched and stored Q3 financial statements for GS (078930).
+2026-05-27 02:34:55 - INFO - Processing 35/2656: GS건설 (006360/00120030) for 2025 Q3
+2026-05-27 02:35:01 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:01 - INFO - Successfully fetched and stored Q3 financial statements for GS건설 (006360).
+2026-05-27 02:35:02 - INFO - Processing 36/2656: GS글로벌 (001250/00138190) for 2025 Q3
+2026-05-27 02:35:10 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:10 - INFO - Successfully fetched and stored Q3 financial statements for GS글로벌 (001250).
+2026-05-27 02:35:10 - INFO - Processing 37/2656: GS리테일 (007070/00140177) for 2025 Q3
+2026-05-27 02:35:17 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:17 - INFO - Successfully fetched and stored Q3 financial statements for GS리테일 (007070).
+2026-05-27 02:35:17 - INFO - Processing 38/2656: GS피앤엘 (499790/01882845) for 2025 Q3
+2026-05-27 02:35:22 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:22 - INFO - Successfully fetched and stored Q3 financial statements for GS피앤엘 (499790).
+2026-05-27 02:35:23 - INFO - Processing 39/2656: HDC (012630/00164636) for 2025 Q3
+2026-05-27 02:35:29 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:29 - INFO - Successfully fetched and stored Q3 financial statements for HDC (012630).
+2026-05-27 02:35:29 - INFO - Processing 40/2656: HDC랩스 (039570/00350312) for 2025 Q3
+2026-05-27 02:35:34 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:34 - INFO - Successfully fetched and stored Q3 financial statements for HDC랩스 (039570).
+2026-05-27 02:35:34 - INFO - Processing 41/2656: HDC현대EP (089470/00357935) for 2025 Q3
+2026-05-27 02:35:41 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:41 - INFO - Successfully fetched and stored Q3 financial statements for HDC현대EP (089470).
+2026-05-27 02:35:41 - INFO - Processing 42/2656: HD건설기계 (267270/01205842) for 2025 Q3
+2026-05-27 02:35:48 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:48 - INFO - Successfully fetched and stored Q3 financial statements for HD건설기계 (267270).
+2026-05-27 02:35:48 - INFO - Processing 43/2656: HD한국조선해양 (009540/00164830) for 2025 Q3
+2026-05-27 02:35:55 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:35:55 - INFO - Successfully fetched and stored Q3 financial statements for HD한국조선해양 (009540).
+2026-05-27 02:35:56 - INFO - Processing 44/2656: HD현대 (267250/01205709) for 2025 Q3
+2026-05-27 02:36:05 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:05 - INFO - Successfully fetched and stored Q3 financial statements for HD현대 (267250).
+2026-05-27 02:36:05 - INFO - Processing 45/2656: HD현대마린솔루션 (443060/01194689) for 2025 Q3
+2026-05-27 02:36:11 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:11 - INFO - Successfully fetched and stored Q3 financial statements for HD현대마린솔루션 (443060).
+2026-05-27 02:36:12 - INFO - Processing 46/2656: HD현대마린엔진 (071970/00406046) for 2025 Q3
+2026-05-27 02:36:16 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:16 - INFO - Successfully fetched and stored Q3 financial statements for HD현대마린엔진 (071970).
+2026-05-27 02:36:17 - INFO - Processing 47/2656: HD현대에너지솔루션 (322000/01199550) for 2025 Q3
+2026-05-27 02:36:21 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:21 - INFO - Successfully fetched and stored Q3 financial statements for HD현대에너지솔루션 (322000).
+2026-05-27 02:36:21 - INFO - Processing 48/2656: HD현대일렉트릭 (267260/01205851) for 2025 Q3
+2026-05-27 02:36:26 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:26 - INFO - Successfully fetched and stored Q3 financial statements for HD현대일렉트릭 (267260).
+2026-05-27 02:36:27 - INFO - Processing 49/2656: HD현대중공업 (329180/01390344) for 2025 Q3
+2026-05-27 02:36:33 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:33 - INFO - Successfully fetched and stored Q3 financial statements for HD현대중공업 (329180).
+2026-05-27 02:36:33 - INFO - Processing 50/2656: HJ중공업 (097230/00633835) for 2025 Q3
+2026-05-27 02:36:39 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:39 - INFO - Successfully fetched and stored Q3 financial statements for HJ중공업 (097230).
+2026-05-27 02:36:39 - INFO - Processing 51/2656: HL D&I (014790/00161116) for 2025 Q3
+2026-05-27 02:36:46 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:46 - INFO - Successfully fetched and stored Q3 financial statements for HL D&I (014790).
+2026-05-27 02:36:46 - INFO - Processing 52/2656: HLB글로벌 (003580/00169048) for 2025 Q3
+2026-05-27 02:36:53 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:36:53 - INFO - Successfully fetched and stored Q3 financial statements for HLB글로벌 (003580).
+2026-05-27 02:36:53 - INFO - Processing 53/2656: HL만도 (204320/01042775) for 2025 Q3
+2026-05-27 02:37:01 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:01 - INFO - Successfully fetched and stored Q3 financial statements for HL만도 (204320).
+2026-05-27 02:37:02 - INFO - Processing 54/2656: HL홀딩스 (060980/00299002) for 2025 Q3
+2026-05-27 02:37:10 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:10 - INFO - Successfully fetched and stored Q3 financial statements for HL홀딩스 (060980).
+2026-05-27 02:37:10 - INFO - Processing 55/2656: HMM (011200/00164645) for 2025 Q3
+2026-05-27 02:37:18 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:18 - INFO - Successfully fetched and stored Q3 financial statements for HMM (011200).
+2026-05-27 02:37:18 - INFO - Processing 56/2656: HS애드 (035000/00140168) for 2025 Q3
+2026-05-27 02:37:24 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:24 - INFO - Successfully fetched and stored Q3 financial statements for HS애드 (035000).
+2026-05-27 02:37:24 - INFO - Processing 57/2656: HS화성 (002460/00174527) for 2025 Q3
+2026-05-27 02:37:29 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:29 - INFO - Successfully fetched and stored Q3 financial statements for HS화성 (002460).
+2026-05-27 02:37:30 - INFO - Processing 58/2656: HS효성 (487570/01854763) for 2025 Q3
+2026-05-27 02:37:36 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:36 - INFO - Successfully fetched and stored Q3 financial statements for HS효성 (487570).
+2026-05-27 02:37:36 - INFO - Processing 59/2656: HS효성첨단소재 (298050/01316254) for 2025 Q3
+2026-05-27 02:37:42 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:42 - INFO - Successfully fetched and stored Q3 financial statements for HS효성첨단소재 (298050).
+2026-05-27 02:37:42 - INFO - Processing 60/2656: INVENI (015360/00105101) for 2025 Q3
+2026-05-27 02:37:50 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:50 - INFO - Successfully fetched and stored Q3 financial statements for INVENI (015360).
+2026-05-27 02:37:50 - INFO - Processing 61/2656: IPARK현대산업개발 (294870/01310269) for 2025 Q3
+2026-05-27 02:37:57 - ERROR - Error inserting into financial_statement_items: no such column: EXCLUDED.account_detail
+2026-05-27 02:37:57 - INFO - Successfully fetched and stored Q3 financial statements for IPARK현대산업개발 (294870).
+2026-05-27 02:37:58 - INFO - Processing 62/2656: JB금융지주 (175330/00980122) for 2025 Q3

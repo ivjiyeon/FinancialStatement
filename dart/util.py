@@ -6,17 +6,34 @@ from datetime import datetime, timedelta
 import sqlite3
 import time
 import logging
-from dotenv import load_dotenv
+from dotenv import load_dotenv # Keep for loading DART_API_KEY if needed by other DART functions
 import zipfile
 import io
 import json
 
+def _get_reporting_period_end_date(bsns_year, reprt_code):
+    """
+    Determines the estimated end date of the reporting period based on bsns_year and reprt_code.
+    Returns date in 'YYYYMMDD' format.
+    """
+    if reprt_code == '11011':  # Q4/Annual
+        return f"{bsns_year}1231"
+    elif reprt_code == '11014': # Q3
+        return f"{bsns_year}0930"
+    elif reprt_code == '11012': # Q2
+        return f"{bsns_year}0630"
+    elif reprt_code == '11013': # Q1
+        return f"{bsns_year}0331"
+    else:
+        logging.warning(f"Unknown reprt_code: {reprt_code}. Returning end of year as default.")
+        return f"{bsns_year}1231"
+
+
 def _parse_xml_response(xml_string, root_tag, item_tag):
-    """Parses XML response from DART API and returns a list of dictionaries."""
     data = []
     try:
         root = ET.fromstring(xml_string)
-        
+
         if root_tag != 'corpCode': # Conditional check for corpCode.xml
             status = root.find('status').text
             message = root.find('message').text
@@ -28,14 +45,10 @@ def _parse_xml_response(xml_string, root_tag, item_tag):
         for item in root.findall(item_tag):
             row = {}
             if root_tag == 'corpCode':
-                # Detailed logging for corpCode parsing to identify NoneType errors
                 for expected_tag in ['corp_code', 'corp_name', 'stock_code', 'modify_date']:
                     element = item.find(expected_tag)
                     if element is None:
                         logging.warning(f"CORPCODE.xml parsing: Tag '{expected_tag}' not found for an item.")
-                    # Removed logging for existing elements to reduce log verbosity, focusing on missing elements
-                    # else:
-                    #     logging.debug(f"CORPCODE.xml parsing: Found '{expected_tag}' with value '{element.text}'")
 
             for child in item:
                 row[child.tag] = child.text
@@ -49,7 +62,6 @@ def _parse_xml_response(xml_string, root_tag, item_tag):
     return data
 
 def _parse_json_response(json_string, root_tag):
-    """Parses JSON response from DART API and returns a list of dictionaries."""
     try:
         data = json.loads(json_string)
         
@@ -63,8 +75,7 @@ def _parse_json_response(json_string, root_tag):
         if 'list' in data:
             return data['list']
         else:
-            # Handle cases where the main data is directly under the root
-            return [data] # Wrap in a list for consistent processing if it's a single object
+            return [data]
     except json.JSONDecodeError as e:
         logging.error(f"JSON Parse Error for {root_tag}: {e}")
         return None
@@ -73,33 +84,22 @@ def _parse_json_response(json_string, root_tag):
         return None
 
 def determine_recent_report_code_and_year(current_date):
-    """
-    Determines the most recently available completed financial statement's
-    reporting year, report code, and display quarter based on the current date.
-    """
     year = current_date.year
 
     reporting_periods = [
-        # (deadline_date, report_code, display_quarter, year_offset_for_report)
-        # Ordered from latest deadline to earliest to find the most recent available report.
-        (datetime(year, 11, 14).date(), '11014', 'Q3', 0),  # Q3 report for current year, due Nov 14
-        (datetime(year, 8, 14).date(), '11012', 'Q2', 0),   # Q2 report for current year, due Aug 14
-        (datetime(year, 5, 15).date(), '11013', 'Q1', 0),   # Q1 report for current year, due May 15
-        (datetime(year, 3, 31).date(), '11011', 'Q4', 1)    # Q4 report for *previous* year, due Mar 31 of current year
+        (datetime(year, 11, 14).date(), '11014', 'Q3', 0),
+        (datetime(year, 8, 14).date(), '11012', 'Q2', 0),
+        (datetime(year, 5, 15).date(), '11013', 'Q1', 0),
+        (datetime(year, 3, 31).date(), '11011', 'Q4', 1)
     ]
 
     for deadline_date, r_code, q_display, year_offset in reporting_periods:
         if current_date.date() >= deadline_date:
             return year - year_offset, r_code, q_display
 
-    # If current_date is before March 31 of the current year,
-    # the Q4 report of the previous year is not yet due.
-    # In this case, the most recently completed and available report would be Q3 of the *previous* year.
     return year - 1, '11014', 'Q3'
 
-
 def get_corp_codes(api_key, db_path):
-    """Fetches all company codes from DART API and updates the company_info table."""
     logging.info("Fetching corporate codes from DART API...")
     url = "https://opendart.fss.or.kr/api/corpCode.xml"
     params = {'crtfc_key': api_key}
@@ -113,17 +113,15 @@ def get_corp_codes(api_key, db_path):
 
         logging.debug(f"DART API Response Status Code: {response.status_code}")
         logging.debug(f"DART API Response Content-Type: {response.headers.get('Content-Type')}")
-        logging.debug(f"DART API Response Text (first 500 chars): {response.text[:500]}...") # Log first 500 chars for brevity
+        logging.debug(f"DART API Response Text (first 500 chars): {response.text[:500]}...")
 
         xml_content = None
-        # Check if the response is a ZIP file
         if response.headers.get('Content-Type') == 'application/zip' or response.content.startswith(b'PK'):
             try:
                 with zipfile.ZipFile(io.BytesIO(response.content)) as z:
                     with z.open('CORPCODE.xml') as corpcode_xml:
                         xml_content = corpcode_xml.read().decode('utf-8')
                         logging.info("Successfully extracted CORPCODE.xml from ZIP response.")
-                        # Save the extracted XML to a temporary file for debugging
                         temp_xml_path = "/tmp/CORPCODE_extracted.xml"
                         with open(temp_xml_path, "w", encoding="utf-8") as f:
                             f.write(xml_content)
@@ -145,12 +143,9 @@ def get_corp_codes(api_key, db_path):
         
         if corp_codes_data:
             corp_codes_df = pd.DataFrame(corp_codes_data)
-            # Ensure column names match DB schema
             corp_codes_df = corp_codes_df.rename(columns={'corp_code': 'corp_code', 'corp_name': 'corp_name', 'stock_code': 'stock_code', 'modify_date': 'modify_date'})
-            corp_codes_df['stock_code'] = corp_codes_df['stock_code'].str.strip() # Clean stock codes
-            #corp_codes_df['corp_eng_name'] = '' # Add corp_eng_name with empty string as it's not in XML
+            corp_codes_df['stock_code'] = corp_codes_df['stock_code'].str.strip()
             
-            # IMPORTANT: Filter out rows with empty or None corp_code BEFORE insertion
             initial_rows = len(corp_codes_df)
             corp_codes_df = corp_codes_df[corp_codes_df['corp_code'].notna() & (corp_codes_df['corp_code'] != '')]
             if len(corp_codes_df) < initial_rows:
@@ -158,7 +153,6 @@ def get_corp_codes(api_key, db_path):
             
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
-                # Create table if it doesn't exist (already handled by init_db but good for safety)
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS company_info (
                         corp_code TEXT PRIMARY KEY,
@@ -186,16 +180,12 @@ def get_corp_codes(api_key, db_path):
     except Exception as e:
         logging.error(f"An unexpected error occurred while fetching corporate codes: {e}")
         return pd.DataFrame()
-    
+
 def fetch_financial_statements(api_key, corp_code, bsns_year, reprt_code):
-    """
-    Fetches financial statements (consolidated or separate) from DART API.
-    Prioritizes consolidated ('CFS'), falls back to separate ('OFS') if 'CFS' fails or no data.
-    """
     financial_data_dfs = []
 
     for fs_div_attempt in ['CFS', 'OFS']:
-        url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json" if fs_div_attempt == 'CFS' else "https://opendart.fss.or.kr/api/fnlttSinglAcnt.json" # Changed to .json
+        url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json" if fs_div_attempt == 'CFS' else "https://opendart.fss.or.kr/api/fnlttSinglAcnt.json"
         params = {
             'crtfc_key': api_key,
             'corp_code': corp_code,
@@ -209,7 +199,7 @@ def fetch_financial_statements(api_key, corp_code, bsns_year, reprt_code):
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
 
-            data = _parse_json_response(response.text, f'fnlttAcnt ({fs_div_attempt})') # Use JSON parser
+            data = _parse_json_response(response.text, f'fnlttAcnt ({fs_div_attempt})')
             if data:
                 df = pd.DataFrame(data)
                 df['fs_div'] = fs_div_attempt
@@ -224,14 +214,12 @@ def fetch_financial_statements(api_key, corp_code, bsns_year, reprt_code):
         except Exception as e:
             logging.warning(f"Error processing {fs_div_attempt} statements for {corp_code}: {e}. Trying next fs_div if available.")
 
-    return pd.DataFrame() # Return empty DataFrame if both fail
+    return pd.DataFrame()
 
 def _clean_financial_df(df):
-    """Cleans and converts financial DataFrame columns to appropriate types."""
     if df.empty:
         return df
 
-    # Define columns to keep based on the financial_statements table schema
     cols_to_keep = [
         'rcept_no', 'bsns_year', 'corp_code', 'stock_code', 'reprt_code',
         'sj_div', 'fs_div', 'fs_nm', 'sj_nm', 'account_id', 'account_nm',
@@ -239,38 +227,44 @@ def _clean_financial_df(df):
         'thstrm_add_amount', 'currency'
     ]
     
-    # Filter DataFrame to keep only relevant columns
     df = df.reindex(columns=cols_to_keep, fill_value='')
 
-    # Columns expected to be numeric
     numeric_cols = [
         'bsns_year', 'thstrm_amount', 'thstrm_add_amount', 'ord'
     ]
     for col in numeric_cols:
         if col in df.columns:
-            # Convert 'None' strings or actual None/NaN to 0 before converting to numeric
             df[col] = df[col].astype(str).str.replace(',', '', regex=False).replace({'None': '0', None: '0'}).fillna('0')
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
-    # Columns expected to be string (all others in cols_to_keep)
     string_cols = [col for col in cols_to_keep if col not in numeric_cols]
     for col in string_cols:
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str)
 
-    # Ensure bsns_year is integer (already handled by numeric_cols, but good for explicit check)
     if 'bsns_year' in df.columns:
         df['bsns_year'] = df['bsns_year'].astype(int)
 
     return df
 
+def fetch_outstanding_shares(corp_code, stock_code, bsns_year, reprt_code):
+    """
+    Placeholder: Fetches outstanding shares (dummy value).
+    This function will be replaced by data from a pykrx-specific script.
+    """
+    logging.info(f"Returning DUMMY outstanding shares for {corp_code} ({stock_code}). Actual data will be retrieved by a separate KRX script.")
+    # Return a dummy value for now. In a real scenario, this would be fetched from DART.
+    return pd.DataFrame({
+        'corp_code': [corp_code],
+        'bsns_year': [bsns_year],
+        'reprt_code': [reprt_code],
+        'outstanding_shares': [100000000] # A reasonable large dummy number
+    })
 
 def get_db_connection(db_path):
-    """Establishes a database connection."""
     return sqlite3.connect(db_path)
 
 def insert_financial_data(conn, df, table_name):
-    """Inserts or updates financial data into the specified tables: statement_metadata and financial_statement_items."""
     if df.empty:
         return
 
@@ -297,8 +291,7 @@ def insert_financial_data(conn, df, table_name):
         except sqlite3.Error as e:
             logging.error(f"Error inserting into {table_name}: {e}")
 
-    elif table_name == 'financial_statements': # This now implies inserting into the new structure
-        # Extract unique metadata for statement_metadata table
+    elif table_name == 'financial_statements':
         metadata_cols = ['rcept_no', 'bsns_year', 'corp_code', 'stock_code', 'reprt_code', 'sj_div', 'fs_div', 'fs_nm', 'currency']
         metadata_df = df[metadata_cols].drop_duplicates(subset=['corp_code', 'bsns_year', 'reprt_code', 'sj_div'])
         
@@ -323,7 +316,6 @@ def insert_financial_data(conn, df, table_name):
             except sqlite3.Error as e:
                 logging.error(f"Error inserting into statement_metadata: {e}")
 
-        # Extract item data for financial_statement_items table
         item_cols = [
             'corp_code', 'bsns_year', 'reprt_code', 'sj_div', 'account_id', 'account_nm',
             'thstrm_amount', 'thstrm_add_amount'
@@ -349,6 +341,44 @@ def insert_financial_data(conn, df, table_name):
             except sqlite3.Error as e:
                 logging.error(f"Error inserting into financial_statement_items: {e}")
 
+    elif table_name == 'outstanding_shares':
+        if df.empty:
+            return
+        columns = ', '.join(df.columns)
+        placeholders = ', '.join(['?' for _ in df.columns])
+        insert_sql = f'''
+            INSERT INTO {table_name} ({columns})
+            VALUES ({placeholders})
+            ON CONFLICT(corp_code, bsns_year, reprt_code) DO UPDATE SET
+                outstanding_shares = EXCLUDED.outstanding_shares
+        '''
+        try:
+            for _, row in df.iterrows():
+                cursor.execute(insert_sql, tuple(row))
+            conn.commit()
+            logging.debug(f"Successfully inserted/updated {len(df)} rows into {table_name}.")
+        except sqlite3.Error as e:
+            logging.error(f"Error inserting into {table_name}: {e}")
+
+    elif table_name == 'stock_prices':
+        if df.empty:
+            return
+        columns = ', '.join(df.columns)
+        placeholders = ', '.join(['?' for _ in df.columns])
+        insert_sql = f'''
+            INSERT INTO {table_name} ({columns})
+            VALUES ({placeholders})
+            ON CONFLICT(stock_code, trade_date) DO UPDATE SET
+                close_price = EXCLUDED.close_price
+        '''
+        try:
+            for _, row in df.iterrows():
+                cursor.execute(insert_sql, tuple(row))
+            conn.commit()
+            logging.debug(f"Successfully inserted/updated {len(df)} rows into {table_name}.")
+        except sqlite3.Error as e:
+            logging.error(f"Error inserting into {table_name}: {e}")
+
     else:
         logging.warning(f"Unknown table_name: {table_name}. Data not inserted.")
 
@@ -357,7 +387,6 @@ def init_db(db_path):
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        # Create company_info table if it doesn't exist
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS company_info (
                 corp_code TEXT PRIMARY KEY,
@@ -367,7 +396,6 @@ def init_db(db_path):
                 corp_eng_name TEXT
             )
         ''')
-        # Create statement_metadata table if it doesn't exist
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS statement_metadata (
                 rcept_no TEXT,
@@ -375,37 +403,51 @@ def init_db(db_path):
                 corp_code TEXT,
                 stock_code TEXT,
                 reprt_code TEXT,
-                sj_div TEXT,         -- 재무제표 구분 (예: 'BS', 'IS', 'CFS')
-                fs_div TEXT,         -- Financial Statement division (예: 'OFS', 'CFS')
+                sj_div TEXT,
+                fs_div TEXT,
                 fs_nm TEXT,
                 currency TEXT,
                 PRIMARY KEY (corp_code, bsns_year, reprt_code, sj_div)
             )
         ''')
-        # Create financial_statement_items table if it doesn't exist
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS financial_statement_items (
                 corp_code TEXT,
                 bsns_year INTEGER,
                 reprt_code TEXT,
-                sj_div TEXT,         -- 재무제표 구분 (예: 'BS', 'IS', 'CFS')
+                sj_div TEXT,
                 account_id TEXT,
                 account_nm TEXT,
-                account_detail TEXT,
-                thstrm_nm TEXT,
-                thstrm_dt TEXT,
                 thstrm_amount INTEGER,
                 thstrm_add_amount INTEGER,
-                ord INTEGER,
                 PRIMARY KEY (corp_code, bsns_year, reprt_code, sj_div, account_id),
                 FOREIGN KEY (corp_code, bsns_year, reprt_code, sj_div) REFERENCES statement_metadata(corp_code, bsns_year, reprt_code, sj_div)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS outstanding_shares (
+                corp_code TEXT,
+                bsns_year INTEGER,
+                reprt_code TEXT,
+                outstanding_shares INTEGER,
+                PRIMARY KEY (corp_code, bsns_year, reprt_code),
+                FOREIGN KEY (corp_code, bsns_year, reprt_code) REFERENCES statement_metadata(corp_code, bsns_year, reprt_code)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS stock_prices (
+                stock_code TEXT,
+                trade_date TEXT,
+                close_price INTEGER,
+                PRIMARY KEY (stock_code, trade_date),
+                FOREIGN KEY (stock_code) REFERENCES company_info(stock_code)
             )
         ''')
         conn.commit()
         logging.info("Database tables checked/created successfully.")
     except sqlite3.Error as e:
         logging.error(f"Database error during initialization: {e}")
-        raise # Re-raise to stop execution if DB init fails
+        raise
     finally:
         if conn:
             conn.close()

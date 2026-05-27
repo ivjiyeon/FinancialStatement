@@ -2,6 +2,8 @@ import sqlite3
 import pandas as pd
 import os
 import logging
+from util import _get_reporting_period_end_date
+from datetime import datetime # Added
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,6 +41,7 @@ class FinancialAnalyzer:
                     fsi.sj_div,
                     sm.fs_div,
                     fsi.account_nm,
+                    fsi.account_id,
                     fsi.thstrm_amount
                 FROM financial_statement_items AS fsi
                 JOIN statement_metadata AS sm
@@ -60,11 +63,59 @@ class FinancialAnalyzer:
         logging.info(f"Loaded {len(financial_df)} financial statement records.")
         return financial_df
 
+    def load_outstanding_shares(self, bsns_year, reprt_code):
+        logging.info(f"Loading outstanding shares for year {bsns_year}, report {reprt_code}...")
+        with self._get_db_connection() as conn:
+            query = f"""
+                SELECT
+                    corp_code,
+                    bsns_year,
+                    reprt_code,
+                    outstanding_shares
+                FROM outstanding_shares
+                WHERE bsns_year = {bsns_year} AND reprt_code = '{reprt_code}'
+            """
+            shares_df = pd.read_sql_query(query, conn, dtype={
+                'corp_code': str,
+                'bsns_year': 'int16',
+                'reprt_code': str,
+                'outstanding_shares': 'int64'
+            })
+        logging.info(f"Loaded {len(shares_df)} outstanding shares records.")
+        return shares_df
+
+    def load_stock_prices(self, trade_date_str):
+        logging.info(f"Loading stock prices for date {trade_date_str}...")
+        with self._get_db_connection() as conn:
+            query = f"""
+                SELECT
+                    stock_code,
+                    trade_date,
+                    close_price
+                FROM stock_prices
+                WHERE trade_date = '{trade_date_str}'
+            """
+            prices_df = pd.read_sql_query(query, conn, dtype={
+                'stock_code': str,
+                'trade_date': str,
+                'close_price': 'int64'
+            })
+        logging.info(f"Loaded {len(prices_df)} stock price records.")
+        return prices_df
+
     def calculate_financial_ratios(self, financial_df, company_info_df):
         logging.info("Calculating financial ratios...")
         if financial_df.empty:
             logging.warning("Financial DataFrame is empty, cannot calculate ratios.")
             return pd.DataFrame()
+
+        logging.debug(f"financial_df columns: {financial_df.columns.tolist()}")
+        if 'account_id' not in financial_df.columns:
+            logging.error("Critical Error: 'account_id' column missing in financial_df.")
+            return pd.DataFrame()
+        logging.debug(f"Unique account_id values (sample): {financial_df['account_id'].unique()[:5].tolist()}...")
+        if financial_df['account_id'].isnull().any():
+            logging.warning("financial_df contains NaN values in 'account_id' column.")
 
         # Extract and pivot Balance Sheet (BS) data
         bs_df = financial_df[financial_df['sj_div'] == 'BS'].pivot_table(
@@ -97,12 +148,24 @@ class FinancialAnalyzer:
         company_info_df_processed = company_info_df[['corp_code', 'stock_code', 'corp_name']].drop_duplicates(subset=['corp_code'])
         merged_df = pd.merge(merged_df, company_info_df_processed, on='corp_code', how='left')
 
+        # Load outstanding shares and merge
+        shares_df = self.load_outstanding_shares(merged_df['bsns_year'].iloc[0], merged_df['reprt_code'].iloc[0])
+        merged_df = pd.merge(merged_df, shares_df, on=['corp_code', 'bsns_year', 'reprt_code'], how='left')
+        merged_df['outstanding_shares'] = merged_df['outstanding_shares'].fillna(pd.NA) # Fill NaN with pd.NA
+
+        # Load stock prices and merge, using the same reporting period end date for consistency
+        target_stock_price_date = _get_reporting_period_end_date(merged_df['bsns_year'].iloc[0], merged_df['reprt_code'].iloc[0])
+        prices_df = self.load_stock_prices(target_stock_price_date)
+        merged_df = pd.merge(merged_df, prices_df[['stock_code', 'close_price']], on='stock_code', how='left')
+        merged_df['close_price'] = merged_df['close_price'].fillna(pd.NA) # Fill NaN with pd.NA
+
         # Initialize ratio columns with 0.0 or None
         ratio_cols = ['Total_Assets', 'Total_Equity', 'Total_Liabilities', 'Current_Assets', 'Current_Liabilities', 
-                      'Net_Income', 'Operating_Cash_Flow', 'D_E_Ratio', 'Current_Ratio', 'ROE', 'ROA', 'PER', 'PBR']
+                      'Net_Income', 'Operating_Cash_Flow', 'D_E_Ratio', 'Current_Ratio', 'ROE', 'ROA',
+                      'EPS', 'BPS', 'PER', 'PBR']
         for col in ratio_cols:
             if col not in merged_df.columns:
-                merged_df[col] = 0.0 # Or pd.NA for ratios that cannot be calculated
+                merged_df[col] = pd.NA # Initialize with pd.NA instead of 0.0
 
         # --- Ratio Calculations ---
         # Balance Sheet Items
@@ -133,10 +196,22 @@ class FinancialAnalyzer:
         # ROA (Return on Assets)
         merged_df['ROA'] = merged_df['Net_Income'] / merged_df['Total_Assets']
         merged_df['ROA'] = merged_df['ROA'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA) # Handle division by zero or NaN
-        
-        # PER and PBR (Placeholders as market price data is not available)
-        merged_df['PER'] = pd.NA
-        merged_df['PBR'] = pd.NA
+
+        # EPS (Earnings Per Share)
+        merged_df['EPS'] = merged_df['Net_Income'] / merged_df['outstanding_shares']
+        merged_df['EPS'] = merged_df['EPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+
+        # BPS (Book Value Per Share)
+        merged_df['BPS'] = merged_df['Total_Equity'] / merged_df['outstanding_shares']
+        merged_df['BPS'] = merged_df['BPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+
+        # PER (Price-to-Earnings Ratio)
+        merged_df['PER'] = merged_df['close_price'] / merged_df['EPS']
+        merged_df['PER'] = merged_df['PER'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+
+        # PBR (Price-to-Book Ratio)
+        merged_df['PBR'] = merged_df['close_price'] / merged_df['BPS']
+        merged_df['PBR'] = merged_df['PBR'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
 
         logging.info("Financial ratios calculated.")
         return merged_df
@@ -184,13 +259,13 @@ class FinancialAnalyzer:
             return pd.DataFrame(), stage1_passed_corp_codes, [], []
 
         # --- Stage 3: Valuation Metrics (PER, PBR) ---
-        logging.info("Applying Stage 3: Valuation Metrics (PER, PBR) - requires market data.")
-        # As discussed, PER and PBR require market price data which is not available in the current DB.
-        # For now, we will just pass all companies from Stage 2 to this stage and note the limitation.
-        # In a real scenario, this would involve fetching market data and applying PER/PBR filters.
-        stage3_filtered_companies = stage2_filtered_companies.copy()
+        logging.info("Applying Stage 3: Valuation Metrics (PER > 0, PBR > 0)...")
+        stage3_filtered_companies = stage2_filtered_companies[
+            (stage2_filtered_companies['PER'] > 0) & # PER 0 초과
+            (stage2_filtered_companies['PBR'] > 0) # PBR 0 초과
+        ].copy()
         stage3_passed_corp_codes = stage3_filtered_companies['corp_code'].tolist()
-        logging.info(f"Stage 3 passed (no PER/PBR filtering applied due to missing market data): {len(stage3_passed_corp_codes)} companies.")
+        logging.info(f"Stage 3 passed: {len(stage3_passed_corp_codes)} companies.")
         
         if stage3_filtered_companies.empty:
             logging.info("No companies remain after Stage 3.")
