@@ -4,6 +4,7 @@ import os
 import logging
 import subprocess
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -11,35 +12,35 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 PROJECT_ROOT = '/home/ivjiyeonb/projects/financial_statement/'
 DB_PATH = os.path.join(PROJECT_ROOT, 'data', 'financial_data.db')
 VENV_KRX_PYTHON = os.path.join(PROJECT_ROOT, 'venv_krx', 'bin', 'python')
+VENV_DART_PYTHON = os.path.join(PROJECT_ROOT, 'venv_dart', 'bin', 'python')
 
 def _get_db_connection():
     """Establishes a connection to the SQLite database."""
     return sqlite3.connect(DB_PATH)
 
 def get_filtered_companies(bsns_year, reprt_code):
-    """
-    Retrieves the list of filtered company corp_codes from the database.
-    """
-    logging.info(f"Fetching filtered companies for {bsns_year}-{reprt_code} from database...")
-    filtered_companies_df = pd.DataFrame()
+    logging.info(f"Fetching filtered companies for {bsns_year}-{reprt_code} from database (raw SQL)...")
+    companies = []
     try:
         with _get_db_connection() as conn:
-            query = f"""
+            cursor = conn.cursor()
+            query = """
                 SELECT DISTINCT fc.corp_code, ci.stock_code, fc.bsns_year, fc.reprt_code
                 FROM filtered_companies AS fc
                 JOIN company_info AS ci ON fc.corp_code = ci.corp_code
                 WHERE fc.bsns_year = ? AND fc.reprt_code = ?
             """
-            filtered_companies_df = pd.read_sql_query(query, conn, params=(bsns_year, reprt_code), dtype={
-                'corp_code': str,
-                'stock_code': str,
-                'bsns_year': 'int16',
-                'reprt_code': str
-            })
-        logging.info(f"Found {len(filtered_companies_df)} filtered companies.")
+            logging.info(f"DEBUG: Executing query: {query}")
+            logging.info(f"DEBUG: With parameters: {(bsns_year, reprt_code)}")
+            cursor.execute(query, (bsns_year, reprt_code))
+            rows = cursor.fetchall()
+            columns = [description[0] for description in cursor.description]
+            for row in rows:
+                companies.append(dict(zip(columns, row)))
+        logging.info(f"Found {len(companies)} filtered companies (raw SQL).")
     except Exception as e:
-        logging.error(f"Error fetching filtered companies: {e}")
-    return filtered_companies_df
+        logging.error(f"Error fetching filtered companies (raw SQL): {e}")
+    return companies
 
 def init_new_tables():
     """
@@ -49,6 +50,10 @@ def init_new_tables():
     try:
         with _get_db_connection() as conn:
             cursor = conn.cursor()
+            # Drop tables if they exist to ensure a clean start
+            cursor.execute('DROP TABLE IF EXISTS stock_prices_data;')
+            cursor.execute('DROP TABLE IF EXISTS outstanding_shares_data;')
+
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS stock_prices_data (
                     stock_code TEXT NOT NULL,
@@ -64,11 +69,10 @@ def init_new_tables():
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS outstanding_shares_data (
                     corp_code TEXT NOT NULL,
-                    bsns_year INTEGER NOT NULL,
-                    reprt_code TEXT NOT NULL,
+                    stock_code TEXT NOT NULL,
                     trade_date TEXT NOT NULL,
                     outstanding_shares INTEGER,
-                    PRIMARY KEY (corp_code, bsns_year, reprt_code, trade_date)
+                    PRIMARY KEY (corp_code, stock_code, trade_date)
                 )
             ''')
             conn.commit()
@@ -76,13 +80,12 @@ def init_new_tables():
     except Exception as e:
         logging.error(f"Error initializing new tables: {e}")
 
-def run_krx_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, start_date, end_date):
+def run_krx_data_fetch_script(corp_code, stock_code, start_date, end_date, krx_id, krx_pw):
     """
     Executes a separate Python script within venv_krx to fetch KRX data.
     """
     script_path = os.path.join(PROJECT_ROOT, 'scripts', 'krx_data_fetch_worker.py')
-    
-    # Ensure the worker script exists
+
     if not os.path.exists(script_path):
         logging.error(f"Krx data fetch worker script not found at {script_path}. Cannot proceed.")
         return False
@@ -92,15 +95,18 @@ def run_krx_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, star
         script_path,
         '--corp_code', corp_code,
         '--stock_code', stock_code,
-        '--bsns_year', str(bsns_year),
-        '--reprt_code', reprt_code,
         '--start_date', start_date,
         '--end_date', end_date,
         '--db_path', DB_PATH
     ]
     logging.info(f"Executing KRX data fetch for {stock_code} ({corp_code}) from {start_date} to {end_date}...")
+    
+    subprocess_env = os.environ.copy()
+    subprocess_env['KRX_ID'] = krx_id
+    subprocess_env['KRX_PW'] = krx_pw
+
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        result = subprocess.run(command, capture_output=True, text=True, check=True, env=subprocess_env)
         logging.info(f"Krx data fetch for {stock_code} completed. Output:\n{result.stdout}")
         if result.stderr:
             logging.warning(f"Krx data fetch for {stock_code} stderr:\n{result.stderr}")
@@ -112,35 +118,87 @@ def run_krx_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, star
         logging.error(f"An unexpected error occurred during KRX data fetch for {stock_code}: {e}")
         return False
 
+def run_dart_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, db_path, dart_api_key):
+    """
+    Executes a separate Python script within venv_dart to fetch DART outstanding shares data.
+    """
+    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'dart_data_fetch_worker.py')
+
+    if not os.path.exists(script_path):
+        logging.error(f"DART data fetch worker script not found at {script_path}. Cannot proceed.")
+        return False
+
+    command = [
+        VENV_DART_PYTHON,
+        script_path,
+        '--corp_code', corp_code,
+        '--stock_code', stock_code,
+        '--bsns_year', str(bsns_year),
+        '--reprt_code', reprt_code,
+        '--db_path', db_path
+    ]
+    logging.info(f"Executing DART data fetch for {stock_code} (Corp Code: {corp_code}, Year: {bsns_year}) using DART API...")
+
+    subprocess_env = os.environ.copy()
+    subprocess_env['DART_API_KEY'] = dart_api_key
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True, env=subprocess_env)
+        logging.info(f"DART data fetch for {stock_code} completed. Output:\n{result.stdout}")
+        if result.stderr:
+            logging.warning(f"DART data fetch for {stock_code} stderr:\n{result.stderr}")
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"DART data fetch for {stock_code} failed with error:\n{e.stderr}\n{e.stdout}")
+        return False
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during DART data fetch for {stock_code}: {e}")
+        return False
+
 def main():
     # --- Configuration for data fetching ---
-    # These should be consistent with analyze_and_identify_undervalued.py
     TARGET_BSNS_YEAR = 2025
     TARGET_REPRT_CODE = '11011' # 11013 for Q3, 11012 for Q2, 11011 for Q4 (Annual), 11014 for Q1
 
+    load_dotenv() # Load .env file
+    KRX_ID = os.getenv('KRX_ID')
+    KRX_PW = os.getenv('KRX_PW')
+    DART_API_KEY = os.getenv('DART_API_KEY') # Load DART API key
+
+    if not KRX_ID or not KRX_PW:
+        logging.error("KRX_ID or KRX_PW environment variables are not set. Please set them in the .env file or ensure it's loaded.")
+        return
+    if not DART_API_KEY:
+        logging.error("DART_API_KEY environment variable is not set. Please set it in the .env file or ensure it's loaded.")
+        return
+
     init_new_tables()
     
-    filtered_companies_df = get_filtered_companies(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+    filtered_companies_list = get_filtered_companies(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
 
-    if filtered_companies_df.empty:
-        logging.info("No filtered companies found to fetch KRX data for.")
+    if not filtered_companies_list:
+        logging.info("No filtered companies found to fetch data for.")
         return
 
     # Determine date range for fetching stock prices
-    # For simplicity, let's fetch for the last 30 days up to today.
-    # In a real scenario, this might be more sophisticated (e.g., historical prices around report dates).
-    end_date = datetime.now().strftime("%Y%m%d")
-    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
+    end_date_obj = datetime.now()
+    start_date_obj = end_date_obj - timedelta(days=7)
+    end_date = end_date_obj.strftime("%Y%m%d")
+    start_date = start_date_obj.strftime("%Y%m%d")
 
-    logging.info(f"Fetching KRX data for {len(filtered_companies_df)} companies from {start_date} to {end_date}...")
-    for index, row in filtered_companies_df.iterrows():
-        corp_code = row['corp_code']
-        stock_code = row['stock_code']
-        bsns_year = row['bsns_year']
-        reprt_code = row['reprt_code']
+    logging.info(f"Fetching data for {len(filtered_companies_list)} companies from {start_date} to {end_date}...")
+    for company_data in filtered_companies_list:
+        corp_code = company_data['corp_code']
+        stock_code = company_data['stock_code']
+        bsns_year = company_data['bsns_year']
+        reprt_code = company_data['reprt_code']
 
-        logging.info(f"Processing {row['stock_code']} (Corp Code: {row['corp_code']})...")
-        run_krx_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, start_date, end_date)
+        logging.info(f"Processing {stock_code} (Corp Code: {corp_code})...")
+        # Fetch KRX stock prices (OHLCV)
+        run_krx_data_fetch_script(corp_code, stock_code, start_date, end_date, KRX_ID, KRX_PW)
+        
+        # Fetch DART outstanding shares
+        run_dart_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, DB_PATH, DART_API_KEY)
     
     logging.info("Finished fetching financial data for filtered companies.")
 

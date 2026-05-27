@@ -1,12 +1,16 @@
+import sys
+import os
 import sqlite3
 import pandas as pd
-import os
 import logging
-from util import _get_reporting_period_end_date
-from datetime import datetime # Added
+from datetime import datetime
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Dynamically add the project root to sys.path
+# This assumes the script is in a subdirectory like 'scripts/'
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(PROJECT_ROOT)
+
+from dart.util import _get_reporting_period_end_date
 
 class FinancialAnalyzer:
     def __init__(self, db_path):
@@ -254,6 +258,8 @@ class FinancialAnalyzer:
         stage2_passed_corp_codes = stage2_filtered_companies['corp_code'].tolist()
         logging.info(f"Stage 2 passed: {len(stage2_passed_corp_codes)} companies.")
 
+        self.save_filtered_companies(stage2_passed_corp_codes, analysis_df['bsns_year'].iloc[0], analysis_df['reprt_code'].iloc[0])
+
         if stage2_filtered_companies.empty:
             logging.info("No companies passed Stage 2 profitability and asset value verification.")
             return pd.DataFrame(), stage1_passed_corp_codes, [], []
@@ -272,13 +278,13 @@ class FinancialAnalyzer:
             return pd.DataFrame(), stage1_passed_corp_codes, stage2_passed_corp_codes, []
 
         logging.info(f"Identified {len(stage3_filtered_companies)} potentially undervalued companies based on systematic criteria.")
-        self.save_filtered_companies(stage2_passed_corp_codes, analysis_df['bsns_year'].iloc[0], analysis_df['reprt_code'].iloc[0])
         return stage3_filtered_companies, stage1_passed_corp_codes, stage2_passed_corp_codes, stage3_passed_corp_codes
 
     def save_filtered_companies(self, corp_codes, bsns_year, reprt_code):
         logging.info(f"Saving {len(corp_codes)} filtered companies to database for {bsns_year}-{reprt_code}...")
         with self._get_db_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("DROP TABLE IF EXISTS filtered_companies;") # Correct position
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS filtered_companies (
                     corp_code TEXT NOT NULL,
@@ -291,11 +297,13 @@ class FinancialAnalyzer:
             conn.commit()
 
             insert_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logging.info(f"DEBUG: Type of bsns_year before insert: {type(bsns_year)}")
+            logging.info(f"DEBUG: Value of bsns_year before insert: {bsns_year}")
             for corp_code in corp_codes:
                 cursor.execute("""
                     INSERT OR REPLACE INTO filtered_companies (corp_code, bsns_year, reprt_code, analysis_date)
                     VALUES (?, ?, ?, ?)
-                """, (corp_code, bsns_year, reprt_code, insert_date))
+                """, (corp_code, int(bsns_year), reprt_code, insert_date)) # CAST TO INT HERE
             conn.commit()
         logging.info("Filtered companies saved successfully.")
 

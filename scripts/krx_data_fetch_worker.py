@@ -12,51 +12,69 @@ def _get_db_connection(db_path):
     """Establishes a connection to the SQLite database."""
     return sqlite3.connect(db_path)
 
-def fetch_and_store_stock_prices(db_path, stock_code, start_date, end_date):
-    logging.info(f"Fetching stock prices for {stock_code} from {start_date} to {end_date}...")
+def fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path, stock_code, start_date, end_date):
+    logging.info(f"Fetching last day's OHLCV data for stock_prices_data for {stock_code} from {start_date} to {end_date}...")
     try:
         df = stock.get_market_ohlcv_by_date(start_date, end_date, stock_code)
+
         if df.empty:
-            logging.warning(f"No stock price data found for {stock_code} from {start_date} to {end_date}.")
+            logging.warning(f"No OHLCV data found for {stock_code} from {start_date} to {end_date}. Skipping storage in stock_prices_data.")
             return
-        
-        df = df.reset_index()
-        df.columns = ['trade_date', 'open_price', 'high_price', 'low_price', 'close_price', 'volume', 'trading_value', 'change_rate']
-        df['stock_code'] = stock_code
-        df['trade_date'] = df['trade_date'].dt.strftime('%Y%m%d')
 
-        # Select relevant columns for storage
-        df_to_store = df[['stock_code', 'trade_date', 'open_price', 'high_price', 'low_price', 'close_price', 'volume']]
+        # Get the last row (most recent trading day)
+        last_row = df.iloc[-1]
+        
+        trade_date = df.index[-1].strftime('%Y%m%d') # Date from the index
+        open_price = last_row['시가']
+        high_price = last_row['고가']
+        low_price = last_row['저가']
+        close_price = last_row['종가']
+        volume = last_row['거래량']
 
         with _get_db_connection(db_path) as conn:
-            df_to_store.to_sql('stock_prices_data', conn, if_exists='append', index=False)
-        logging.info(f"Successfully stored stock prices for {stock_code}.")
+            cursor = conn.cursor()
+            # Use UPSERT to update if (stock_code, trade_date) exists, insert otherwise
+            cursor.execute('''
+                INSERT INTO stock_prices_data (stock_code, trade_date, open_price, high_price, low_price, close_price, volume)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(stock_code, trade_date) DO UPDATE SET
+                    open_price = excluded.open_price,
+                    high_price = excluded.high_price,
+                    low_price = excluded.low_price,
+                    close_price = excluded.close_price,
+                    volume = excluded.volume
+            ''', (stock_code, trade_date, open_price, high_price, low_price, close_price, volume))
+            conn.commit()
+        logging.info(f"Successfully stored last day's OHLCV data for {stock_code} in stock_prices_data.")
     except Exception as e:
-        logging.error(f"Error fetching/storing stock prices for {stock_code}: {e}")
+        logging.error(f"Error fetching/storing last day's OHLCV data for {stock_code} in stock_prices_data: {e}")
 
-def fetch_and_store_outstanding_shares(db_path, corp_code, bsns_year, reprt_code, start_date, end_date):
-    logging.info(f"Fetching outstanding shares for {corp_code} ({bsns_year}-{reprt_code}) from {start_date} to {end_date}...")
+def fetch_and_store_outstanding_shares(db_path, corp_code, stock_code, start_date, end_date):
+    logging.info(f"Fetching outstanding shares for {corp_code} (stock_code: {stock_code}) from {start_date} to {end_date}...")
     try:
-        # pykrx get_market_cap_by_date provides market cap, shares, etc.
-        # We need to extract outstanding shares from it.
-        df_cap = stock.get_market_cap_by_date(start_date, end_date, corp_code)
-        
+        df_cap = stock.get_market_cap_by_date(start_date, end_date, stock_code)
+
         if df_cap.empty:
-            logging.warning(f"No market cap data found for {corp_code} from {start_date} to {end_date}.")
+            logging.warning(f"No market cap data found for {corp_code} (stock_code: {stock_code}) from {start_date} to {end_date}. Skipping storage.")
             return
         
-        df_cap = df_cap.reset_index()
-        df_cap.columns = ['trade_date', 'market_cap', 'outstanding_shares', 'foreign_ownership_rate', 'volume', 'trading_value']
-        df_cap['corp_code'] = corp_code
-        df_cap['bsns_year'] = bsns_year
-        df_cap['reprt_code'] = reprt_code
-        df_cap['trade_date'] = df_cap['trade_date'].dt.strftime('%Y%m%d')
-
-        # Select relevant columns for storage
-        df_to_store = df_cap[['corp_code', 'bsns_year', 'reprt_code', 'trade_date', 'outstanding_shares']]
+        # Select only the last row (most recent day)
+        last_row = df_cap.iloc[-1]
+        
+        # Extract data for the last day
+        trade_date = last_row.name.strftime('%Y%m%d') # Index is datetime, so last_row.name is the date
+        outstanding_shares = last_row['상장주식수']
 
         with _get_db_connection(db_path) as conn:
-            df_to_store.to_sql('outstanding_shares_data', conn, if_exists='append', index=False)
+            cursor = conn.cursor()
+            # Use UPSERT to update if (corp_code, stock_code, trade_date) exists, insert otherwise
+            cursor.execute('''
+                INSERT INTO outstanding_shares_data (corp_code, stock_code, trade_date, outstanding_shares)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(corp_code, stock_code, trade_date) DO UPDATE SET
+                    outstanding_shares = excluded.outstanding_shares
+            ''', (corp_code, stock_code, trade_date, outstanding_shares))
+            conn.commit()
         logging.info(f"Successfully stored outstanding shares for {corp_code}.")
     except Exception as e:
         logging.error(f"Error fetching/storing outstanding shares for {corp_code}: {e}")
@@ -65,16 +83,18 @@ def main():
     parser = argparse.ArgumentParser(description='Fetch KRX stock data and store in DB.')
     parser.add_argument('--corp_code', type=str, required=True, help='Corporate code')
     parser.add_argument('--stock_code', type=str, required=True, help='Stock code')
-    parser.add_argument('--bsns_year', type=int, required=True, help='Business year')
-    parser.add_argument('--reprt_code', type=str, required=True, help='Report code')
+    # Removed bsns_year and reprt_code as they are no longer used by this worker script for outstanding shares
     parser.add_argument('--start_date', type=str, required=True, help='Start date for data fetch (YYYYMMDD)')
     parser.add_argument('--end_date', type=str, required=True, help='End date for data fetch (YYYYMMDD)')
     parser.add_argument('--db_path', type=str, required=True, help='Path to the SQLite database')
 
     args = parser.parse_args()
 
-    fetch_and_store_stock_prices(args.db_path, args.stock_code, args.start_date, args.end_date)
-    fetch_and_store_outstanding_shares(args.db_path, args.corp_code, args.bsns_year, args.reprt_code, args.start_date, args.end_date)
+    # Call the existing function for OHLCV data
+    fetch_and_store_last_day_ohlcv_for_stock_prices_data(args.db_path, args.stock_code, args.start_date, args.end_date)
+    
+    # Call the existing function for outstanding shares
+    fetch_and_store_outstanding_shares(args.db_path, args.corp_code, args.stock_code, args.start_date, args.end_date)
 
 if __name__ == '__main__':
     main()
