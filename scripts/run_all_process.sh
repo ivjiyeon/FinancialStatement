@@ -24,18 +24,24 @@ source "${VENV_DART}/bin/activate"
 python3 "${PROJECT_ROOT}/dart/get_financial_statements.py"
 deactivate # Deactivate venv_dart
 
-# 3. Analyze and identify undervalued companies (Stage 1 & 2)
-echo "Running scripts/analyze_and_identify_undervalued.py..."
+# 3. Analyze and identify undervalued companies (Stage 1 & 2 Filtering)
+echo "Running scripts/analyze_and_identify_undervalued.py (Stage 1 & 2)..."
 source "${VENV_DART}/bin/activate"
 python3 "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py"
 deactivate # Deactivate venv_dart
 
-# 4. Fetch stock prices and outstanding shares for filtered companies (Stage 3)
+# 4. Fetch stock prices and outstanding shares for Stage 1&2 filtered companies
 echo "Running scripts/fetch_financial_data_for_filtered_companies.py..."
 # This script internally manages venv_krx and venv_dart for its subprocesses,
 # so we activate venv_dart for the main script
 source "${VENV_DART}/bin/activate"
 python3 "${PROJECT_ROOT}/scripts/fetch_financial_data_for_filtered_companies.py"
+deactivate # Deactivate venv_dart
+
+# 5. Analyze and identify undervalued companies (Stage 3 Filtering with PER, PBR, ROE)
+echo "Running scripts/analyze_and_identify_undervalued.py (Stage 3)..."
+source "${VENV_DART}/bin/activate"
+python3 "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py"
 deactivate # Deactivate venv_dart
 
 echo "All financial analysis processes completed successfully."
