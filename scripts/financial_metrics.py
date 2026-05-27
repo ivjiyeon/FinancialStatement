@@ -25,7 +25,7 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         # Fetch latest outstanding_shares
         cursor.execute(f"""
             SELECT outstanding_shares FROM outstanding_shares_data
-            WHERE stock_code = '{stock_code}' AND trade_date LIKE '{bsns_year}%'
+            WHERE stock_code = '{stock_code}'
             ORDER BY trade_date DESC LIMIT 1
         """)
         outstanding_shares_result = cursor.fetchone()
@@ -34,7 +34,7 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         # Fetch latest stck_clpr (종가)
         cursor.execute(f"""
             SELECT close_price FROM stock_prices_data
-            WHERE stock_code = '{stock_code}' AND trade_date LIKE '{bsns_year}%'
+            WHERE stock_code = '{stock_code}'
             ORDER BY trade_date DESC LIMIT 1
         """)
         stck_clpr_result = cursor.fetchone()
@@ -50,12 +50,10 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
                 ON sm.corp_code = fsi_profit.corp_code
                 AND sm.bsns_year = fsi_profit.bsns_year
                 AND sm.reprt_code = fsi_profit.reprt_code
-                AND sm.sj_div = fsi_profit.sj_div
             JOIN financial_statement_items AS fsi_equity
                 ON sm.corp_code = fsi_equity.corp_code
                 AND sm.bsns_year = fsi_equity.bsns_year
                 AND sm.reprt_code = fsi_equity.reprt_code
-                AND sm.sj_div = fsi_equity.sj_div
             WHERE
                 sm.corp_code = '{corp_code}'
                 AND sm.bsns_year = '{bsns_year}'
