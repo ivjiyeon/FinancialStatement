@@ -20,6 +20,35 @@ from dart.util import (
 )
 
 
+def delete_old_financial_data(db_path, bsns_year, reprt_code):
+    """
+    Deletes old financial data for a specific business year and report code from the database.
+    This now targets the new 'statement_metadata' and 'financial_statement_items' tables.
+    """
+    tables_to_clean = ['financial_statement_items', 'statement_metadata'] # Order matters if no cascade delete
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            # First, delete from financial_statement_items where the statement_id is linked to statement_metadata
+            # with the target bsns_year and reprt_code.
+            cursor.execute(f"""
+                DELETE FROM financial_statement_items
+                WHERE statement_id IN (
+                    SELECT id FROM statement_metadata
+                    WHERE bsns_year = ? AND reprt_code = ?
+                )
+            """, (bsns_year, reprt_code))
+            
+            # Then, delete from statement_metadata
+            cursor.execute(f"DELETE FROM statement_metadata WHERE bsns_year = ? AND reprt_code = ?", (bsns_year, reprt_code))
+            
+            conn.commit()
+            logging.info(f"Cleaned old data for year {bsns_year} and report code {reprt_code} from tables: {', '.join(tables_to_clean)}")
+    except sqlite3.Error as e:
+        logging.error(f"SQLite error during data cleanup: {e}")
+    except Exception as e:
+        logging.error(f"Error cleaning old financial data: {e}")
 
 
 def main():
@@ -82,6 +111,8 @@ def main():
 
     logging.info(f"Determined Report Year: {report_year}, Display Quarter: {display_quarter}, Report Quarter Code: {report_quarter_code}")
 
+    # --- Clean old financial data for the determined report period ---
+    delete_old_financial_data(DB_PATH, report_year, report_quarter_code)
 
     # --- Load KRX Sector Data ---
     try:
@@ -146,20 +177,11 @@ def main():
                 # Add stock_code to the DataFrame before saving
                 finstate_df['stock_code'] = stock_code
 
-                # Separate and store Balance Sheet, Income Statement, Cash Flow
-                if 'sj_div' in finstate_df.columns:
-                    bs_df = finstate_df[finstate_df['sj_div'] == 'BS'].copy()
-                    is_df = finstate_df[finstate_df['sj_div'] == 'IS'].copy()
-                    cf_df = finstate_df[finstate_df['sj_div'] == 'CF'].copy()
+                # Store the financial data in the new normalized schema
+                with get_db_connection(DB_PATH) as conn:
+                    insert_financial_data(conn, finstate_df)
 
-                    with get_db_connection(DB_PATH) as conn:
-                        insert_financial_data(conn, bs_df, 'balance_sheet')
-                        insert_financial_data(conn, is_df, 'income_statement')
-                        insert_financial_data(conn, cf_df, 'cash_flow')
-
-                    logging.info(f"Successfully fetched and stored financial statements for {corp_name} ({stock_code}).")
-                else:
-                    logging.warning(f"'sj_div' column not found for {corp_name} ({stock_code}). Cannot separate financial statements.")
+                logging.info(f"Successfully fetched and stored financial statements for {corp_name} ({stock_code}).")
             else:
                 logging.info(f"No financial statements found for {corp_name} ({stock_code}) for {report_year} {display_quarter}.")
 
