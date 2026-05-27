@@ -13,9 +13,9 @@ from util import (
     get_db_connection,
     insert_financial_data,
     get_corp_codes,
-    fetch_financial_statements
+    fetch_financial_statements,
+    init_db
 )
-
 def main():
     # Load environment variables from .env file
     load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), '../.env'))
@@ -45,7 +45,7 @@ def main():
     logging.info(f"KRX Sector Data path: {CSV_PATH}")
 
     # --- Database Initialization ---
-    from dart.util import init_db
+
     init_db(DB_PATH)
 
     parser = argparse.ArgumentParser(description="Fetch one year of historical financial statements using DART API.")
@@ -119,9 +119,10 @@ def main():
         processed_count = 0
         for index, company in companies_to_process.iterrows():
             processed_count += 1
-            if display_quarter == 'Q3' and processed_count < 1470:
-                print(f"skipping {processed_count}")
-                continue
+            # Remove this line to process all companies for Q3
+            # if display_quarter == 'Q3' and processed_count < 1470:
+            #    print(f"skipping {processed_count}")
+            #    continue
             corp_code = company['corp_code']
             stock_code = company['stock_code']
             corp_name = company['corp_name']

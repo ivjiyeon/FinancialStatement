@@ -2,3 +2,7 @@ venv_dart/
 venv_krx/
 data/financial_data.db
 .env
+*.log
+data/*.csv
+__pycache__/
+scripts/analyze_failed_stage2.py

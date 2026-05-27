@@ -338,12 +338,8 @@ def insert_financial_data(conn, df, table_name):
                 VALUES ({item_placeholders})
                 ON CONFLICT(corp_code, bsns_year, reprt_code, sj_div, account_id) DO UPDATE SET
                     account_nm = EXCLUDED.account_nm,
-                    account_detail = EXCLUDED.account_detail,
-                    thstrm_nm = EXCLUDED.thstrm_nm,
-                    thstrm_dt = EXCLUDED.thstrm_dt,
                     thstrm_amount = EXCLUDED.thstrm_amount,
-                    thstrm_add_amount = EXCLUDED.thstrm_add_amount,
-                    ord = EXCLUDED.ord
+                    thstrm_add_amount = EXCLUDED.thstrm_add_amount
             '''
             try:
                 for _, row in items_df.iterrows():
