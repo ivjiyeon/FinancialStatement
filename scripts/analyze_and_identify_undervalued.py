@@ -71,20 +71,19 @@ class FinancialAnalyzer:
 
     def load_outstanding_shares(self, bsns_year, reprt_code):
         logging.info(f"Loading outstanding shares for year {bsns_year}, report {reprt_code}...")
+        target_trade_date = _get_reporting_period_end_date(bsns_year, reprt_code)
         with self._get_db_connection() as conn:
             query = f"""
                 SELECT
                     corp_code,
-                    bsns_year,
-                    reprt_code,
+                    trade_date,
                     outstanding_shares
                 FROM outstanding_shares_data
-                WHERE bsns_year = {bsns_year} AND reprt_code = '{reprt_code}'
+                WHERE trade_date = '{target_trade_date}'
             """
             shares_df = pd.read_sql_query(query, conn, dtype={
                 'corp_code': str,
-                'bsns_year': 'int16',
-                'reprt_code': str,
+                'trade_date': str,
                 'outstanding_shares': 'int64'
             })
         logging.info(f"Loaded {len(shares_df)} outstanding shares records.")
