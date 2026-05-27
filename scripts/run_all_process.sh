@@ -8,6 +8,17 @@ PROJECT_ROOT="/home/ivjiyeonb/projects/financial_statement"
 VENV_DART="${PROJECT_ROOT}/venv_dart"
 VENV_KRX="${PROJECT_ROOT}/venv_krx"
 
+# Load environment variables from .env file
+if [ -f "${PROJECT_ROOT}/.env" ]; then
+    export $(grep -v '^#' "${PROJECT_ROOT}/.env" | xargs)
+    echo "Environment variables loaded from .env"
+else
+    echo "Warning: .env file not found at ${PROJECT_ROOT}/.env"
+fi
+
+# Set PYTHONPATH to include the project root for module imports
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
+
 echo "Starting all financial analysis processes..."
 
 # 1. Fetch KRX sector data

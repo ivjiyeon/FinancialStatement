@@ -32,7 +32,7 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
 
         # Fetch latest stck_clpr (종가)
         cursor.execute(f"""
-            SELECT stck_clpr FROM stock_prices_data
+            SELECT close_price FROM stock_prices_data
             WHERE stock_code = '{stock_code}' AND trade_date LIKE '{bsns_year}%'
             ORDER BY trade_date DESC LIMIT 1
         """)

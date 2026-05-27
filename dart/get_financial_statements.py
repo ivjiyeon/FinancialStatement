@@ -19,31 +19,7 @@ from dart.util import (
     fetch_financial_statements
 )
 
-def delete_old_financial_data(db_path):
-    logging.info("Checking for and deleting financial data older than 1.5 years.")
-    
-    # Calculate the minimum business year to keep.
-    # If today is 2024-05-15, 1.5 years ago is 2022-11-15. So we want to keep data from 2023 and 2024.
-    # This means deleting data with bsns_year < 2023.
-    years_to_keep_min = (datetime.now() - timedelta(days=1.5 * 365)).year 
-    
-    tables_to_clean = ['balance_sheet', 'income_statement', 'cash_flow']
 
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        for table_name in tables_to_clean:
-            try:
-                delete_sql = f"""
-                    DELETE FROM {table_name}
-                    WHERE bsns_year < {years_to_keep_min}
-                """
-                cursor.execute(delete_sql)
-                conn.commit()
-                logging.info(f"Deleted old data from {table_name}. Kept data from year {years_to_keep_min} and newer.")
-                logging.info(f"Number of rows deleted from {table_name}: {cursor.rowcount}")
-
-            except sqlite3.Error as e:
-                logging.error(f"Error deleting old data from {table_name}: {e}")
 
 
 def main():
@@ -80,8 +56,7 @@ def main():
     from dart.util import init_db
     init_db(DB_PATH)
     
-    # --- Delete old financial data ---
-    delete_old_financial_data(DB_PATH) # New line added here
+
 
     parser = argparse.ArgumentParser(description="Fetch quarterly financial statements using DART API (JSON).")
     parser.add_argument("--api_key", type=str, help="FSS DART API Key")
