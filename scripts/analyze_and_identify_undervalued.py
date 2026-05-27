@@ -224,8 +224,8 @@ class FinancialAnalyzer:
             per_list.append(per)
             pbr_list.append(pbr)
         
-        merged_df['PER'] = per_list
-        merged_df['PBR'] = pbr_list
+        merged_df['PER'] = pd.Series(per_list, dtype=float)
+        merged_df['PBR'] = pd.Series(pbr_list, dtype=float)
         
         logging.info("Financial ratios calculated.")
         return merged_df
@@ -422,7 +422,11 @@ def main():
                     append=False
                 )
                 logging.info(f"--- Undervalued Companies Identified (Final List) ---")
-                print(stage3_final_companies_df[['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']].to_string())
+                # Convert numeric columns to string with formatting to handle potential NaN values gracefully
+                display_df = stage3_final_companies_df[['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']].copy()
+                for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']:
+                    display_df[col] = display_df[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
+                print(display_df.to_string())
                 logging.info(f"\nStage 3 completed. {len(stage3_final_companies_df)} companies passed all stages and saved to 'filtered_companies' table.")
             else:
                 logging.info("No undervalued companies found based on Stage 3 criteria.")
