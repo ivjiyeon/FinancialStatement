@@ -78,7 +78,7 @@ class FinancialAnalyzer:
                     bsns_year,
                     reprt_code,
                     outstanding_shares
-                FROM outstanding_shares
+                FROM outstanding_shares_data
                 WHERE bsns_year = {bsns_year} AND reprt_code = '{reprt_code}'
             """
             shares_df = pd.read_sql_query(query, conn, dtype={
@@ -98,7 +98,7 @@ class FinancialAnalyzer:
                     stock_code,
                     trade_date,
                     close_price
-                FROM stock_prices
+                FROM stock_prices_data
                 WHERE trade_date = '{trade_date_str}'
             """
             prices_df = pd.read_sql_query(query, conn, dtype={
