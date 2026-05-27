@@ -412,6 +412,10 @@ def main():
             
             analysis_df_stage3 = analyzer.calculate_financial_ratios(financial_df_stage3, company_info_df)
 
+            logging.info(f"--- Companies entering Stage 3 with PER/PBR values ---")
+            print(analysis_df_stage3[['corp_name', 'stock_code', 'PER', 'PBR']].to_string())
+            logging.info(f"-----------------------------------------------------")
+
             stage3_final_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
 
             if not stage3_final_companies_df.empty:
