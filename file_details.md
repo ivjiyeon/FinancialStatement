@@ -56,6 +56,7 @@ This directory contains general utility scripts for the project.
 
 - `analyze_and_identify_undervalued.log`: Log file for the financial analysis script.
 - `analyze_and_identify_undervalued.py`: Python script for analyzing financial data.
+- `financial_metrics.py`: Module containing functions for calculating financial metrics like PER and PBR.
 - `fetch_financial_data_for_filtered_companies.py`: Python script to fetch stock prices and outstanding shares for companies identified as undervalued in `analyze_and_identify_undervalued.py`, storing data in new, dedicated database tables.
 - `krx_data_fetch_worker.py`: Helper script executed within `venv_krx` to fetch stock prices and outstanding shares using `pykrx`.
 - `migrate_db.py`: Script used for migrating data from the old `financial_statements` table to the new `statement_metadata` and `financial_statement_items` tables.

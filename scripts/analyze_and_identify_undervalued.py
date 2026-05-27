@@ -11,6 +11,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
 from dart.util import _get_reporting_period_end_date
+from scripts.financial_metrics import calculate_per_pbr
 
 class FinancialAnalyzer:
     def __init__(self, db_path):
@@ -209,16 +210,28 @@ class FinancialAnalyzer:
         merged_df['BPS'] = merged_df['Total_Equity'] / merged_df['outstanding_shares']
         merged_df['BPS'] = merged_df['BPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
 
-        # PER (Price-to-Earnings Ratio)
-        merged_df['PER'] = merged_df['close_price'] / merged_df['EPS']
-        merged_df['PER'] = merged_df['PER'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
-
-        # PBR (Price-to-Book Ratio)
-        merged_df['PBR'] = merged_df['close_price'] / merged_df['BPS']
-        merged_df['PBR'] = merged_df['PBR'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
-
+        # Calculate PER and PBR using the new module
+        logging.info("Calculating PER and PBR using financial_metrics module...")
+        per_list = []
+        pbr_list = []
+        for index, row in merged_df.iterrows():
+            corp_code = row['corp_code']
+            stock_code = row['stock_code']
+            bsns_year = str(row['bsns_year']) # Ensure bsns_year is string
+            
+            per, pbr = calculate_per_pbr(corp_code, stock_code, bsns_year, self.db_path)
+            per_list.append(per)
+            pbr_list.append(pbr)
+        
+        merged_df['PER'] = per_list
+        merged_df['PBR'] = pbr_list
+        
         logging.info("Financial ratios calculated.")
         return merged_df
+
+
+
+
 
     def identify_undervalued_companies(self, analysis_df):
         logging.info("Identifying undervalued companies with updated criteria...")
