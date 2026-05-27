@@ -1,5 +1,6 @@
 
 import sqlite3
+import logging
 
 def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: str):
     """
@@ -65,8 +66,10 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         """)
         fs_data = cursor.fetchone()
 
+        logging.info(f"DEBUG {corp_code} ({stock_code}, {bsns_year}) - outstanding_shares: {outstanding_shares}, close_price: {stck_clpr}, fs_data: {fs_data}")
         if outstanding_shares and stck_clpr and fs_data:
             net_profit_or_loss, stock_equity = fs_data
+            logging.info(f"DEBUG {corp_code} ({stock_code}, {bsns_year}) - net_profit_or_loss: {net_profit_or_loss}, stock_equity: {stock_equity}")
 
             # Calculate PER
             if net_profit_or_loss and outstanding_shares:
