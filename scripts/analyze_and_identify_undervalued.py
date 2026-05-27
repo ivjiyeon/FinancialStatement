@@ -271,21 +271,42 @@ class FinancialAnalyzer:
         stage2_passed_corp_codes = stage2_filtered_companies['corp_code'].tolist()
         logging.info(f"Stage 2 passed: {len(stage2_passed_corp_codes)} companies.")
 
-        self.save_filtered_companies(stage2_passed_corp_codes, analysis_df['bsns_year'].iloc[0], analysis_df['reprt_code'].iloc[0])
-
         if stage2_filtered_companies.empty:
             logging.info("No companies passed Stage 2 profitability and asset value verification.")
+            # If no companies pass Stage 2, nothing to save, and return empty lists for subsequent stages.
             return pd.DataFrame(), stage1_passed_corp_codes, [], []
 
-        # --- Stage 3: Valuation Metrics (PER, PBR) ---
-        logging.info("Applying Stage 3: Valuation Metrics (PER > 0, PBR > 0)...")
+        # --- Stage 3: Valuation Metrics (PER, PBR, ROE) ---
+        logging.info("Applying Stage 3: Valuation Metrics (P/E > 0, P/E < 15.0, P/B > 0, P/B < 1.5, ROE > 10.0)...")
+        
+        # Companies failing Stage 3 will be logged
+        failed_stage3_per = stage2_filtered_companies[
+            ~((stage2_filtered_companies['PER'] > 0) & (stage2_filtered_companies['PER'] < 15.0))
+        ]
+        for idx, row in failed_stage3_per.iterrows():
+            logging.info(f"Company {row['corp_name']} (PER={row['PER']:.2f}) failed Stage 3 (P/E not within 0-15).")
+
+        failed_stage3_pbr = stage2_filtered_companies[
+            ~((stage2_filtered_companies['PBR'] > 0) & (stage2_filtered_companies['PBR'] < 1.5))
+        ]
+        for idx, row in failed_stage3_pbr.iterrows():
+            logging.info(f"Company {row['corp_name']} (PBR={row['PBR']:.2f}) failed Stage 3 (P/B not within 0-1.5).")
+
+        # ROE > 10.0 (or 0.10) is already applied in Stage 2.
+        # No need to explicitly check it again here as stage2_filtered_companies already satisfies it.
+        
         stage3_filtered_companies = stage2_filtered_companies[
-            (stage2_filtered_companies['PER'] > 0) & # PER 0 초과
-            (stage2_filtered_companies['PBR'] > 0) # PBR 0 초과
+            (stage2_filtered_companies['PER'] > 0) &
+            (stage2_filtered_companies['PER'] < 15.0) &
+            (stage2_filtered_companies['PBR'] > 0) &
+            (stage2_filtered_companies['PBR'] < 1.5)
         ].copy()
+
         stage3_passed_corp_codes = stage3_filtered_companies['corp_code'].tolist()
         logging.info(f"Stage 3 passed: {len(stage3_passed_corp_codes)} companies.")
         
+        self.save_filtered_companies(stage3_passed_corp_codes, analysis_df['bsns_year'].iloc[0], analysis_df['reprt_code'].iloc[0])
+
         if stage3_filtered_companies.empty:
             logging.info("No companies remain after Stage 3.")
             return pd.DataFrame(), stage1_passed_corp_codes, stage2_passed_corp_codes, []
