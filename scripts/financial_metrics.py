@@ -70,16 +70,18 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         if outstanding_shares and stck_clpr and fs_data:
             net_profit_or_loss, stock_equity = fs_data
             logging.info(f"DEBUG {corp_code} ({stock_code}, {bsns_year}) - net_profit_or_loss: {net_profit_or_loss}, stock_equity: {stock_equity}")
-
+            print(f"stck_clpr: {stck_clpr}")
             # Calculate PER
             if net_profit_or_loss and outstanding_shares:
                 eps = net_profit_or_loss / outstanding_shares
+                print(eps)
                 if eps > 0:
                     per = stck_clpr / eps
 
             # Calculate PBR
             if stock_equity and outstanding_shares:
                 bps = stock_equity / outstanding_shares
+                print(bps)
                 if bps > 0:
                     pbr = stck_clpr / bps
 

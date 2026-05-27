@@ -349,6 +349,7 @@ class FinancialAnalyzer:
         logging.info("Filtered companies saved successfully.")
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s') # Configure logging
     parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
     parser.add_argument('--stage', type=str, choices=['1_2', '3', 'all'], default='all',
                         help="Specify the analysis stage to run: '1_2' for initial filtering, '3' for valuation metrics, or 'all' for sequential execution.")
