@@ -16,6 +16,7 @@
    - undervalued_standard.md
 6. 재무 분석 및 저평가 기업 식별 모델/스크립트 개발
    - analyze_and_identify_undervalued.py 개발중
+   - scripts/run_all_process.sh (1-6번 자동 실행 스크립트)
 7. 거시 경제 데이터 및 산업 리포트 수집
 8. 미래 유망 섹터 분석 및 선정 방법론 정의
 9. 보고서 템플릿 디자인 (추천 기업, 이전 추천 기업 평가, 유망 섹터)
