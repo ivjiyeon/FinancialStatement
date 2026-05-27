@@ -155,7 +155,7 @@ class FinancialAnalyzer:
 
         # Load outstanding shares and merge
         shares_df = self.load_outstanding_shares(merged_df['bsns_year'].iloc[0], merged_df['reprt_code'].iloc[0])
-        merged_df = pd.merge(merged_df, shares_df, on=['corp_code', 'bsns_year', 'reprt_code'], how='left')
+        merged_df = pd.merge(merged_df, shares_df[['corp_code', 'outstanding_shares']], on='corp_code', how='left')
         merged_df['outstanding_shares'] = merged_df['outstanding_shares'].fillna(pd.NA) # Fill NaN with pd.NA
 
         # Load stock prices and merge, using the same reporting period end date for consistency
