@@ -1,16 +1,17 @@
 import sqlite3
 import os
 import logging
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-PROJECT_ROOT = '/home/ivjiyeonb/projects/financial_statement/'
-DB_PATH = os.path.join(PROJECT_ROOT, 'data', 'financial_data.db')
+PROJECT_ROOT = Path('/home/ivjiyeonb/projects/financial_statement/')
+DB_PATH = PROJECT_ROOT / 'data' / 'financial_data.db'
 
 def check_db():
     logging.info(f"Checking database at: {DB_PATH}")
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = sqlite3.connect(str(DB_PATH))
         cursor = conn.cursor()
 
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")

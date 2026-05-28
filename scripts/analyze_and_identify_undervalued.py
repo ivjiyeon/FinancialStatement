@@ -5,11 +5,12 @@ import pandas as pd
 import logging
 import argparse
 from datetime import datetime
+from pathlib import Path
 
 # Dynamically add the project root to sys.path
 # This assumes the script is in a subdirectory like 'scripts/'
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(PROJECT_ROOT)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(PROJECT_ROOT))
 
 from dart.util import _get_reporting_period_end_date
 from scripts.financial_metrics import calculate_per_pbr
@@ -39,7 +40,7 @@ class FinancialAnalyzer:
     def load_financial_statements(self, bsns_year, reprt_code):
         logging.info(f"Loading financial statements for year {bsns_year}, report {reprt_code}...")
         with self._get_db_connection() as conn:
-            query = f"""
+            query = """
                 SELECT
                     fsi.corp_code,
                     fsi.bsns_year,
@@ -55,9 +56,9 @@ class FinancialAnalyzer:
                 AND fsi.bsns_year = sm.bsns_year
                 AND fsi.reprt_code = sm.reprt_code
                 AND fsi.sj_div = sm.sj_div
-                WHERE fsi.bsns_year = {bsns_year} AND fsi.reprt_code = '{reprt_code}'
+                WHERE fsi.bsns_year = ? AND fsi.reprt_code = ?
             """
-            financial_df = pd.read_sql_query(query, conn, dtype={
+            financial_df = pd.read_sql_query(query, conn, params=(bsns_year, reprt_code), dtype={
                 'corp_code': str,
                 'bsns_year': 'int16',
                 'reprt_code': str,
@@ -73,15 +74,15 @@ class FinancialAnalyzer:
         logging.info(f"Loading outstanding shares for year {bsns_year}, report {reprt_code}...")
         target_trade_date = _get_reporting_period_end_date(bsns_year, reprt_code)
         with self._get_db_connection() as conn:
-            query = f"""
+            query = """
                 SELECT
                     corp_code,
                     trade_date,
                     outstanding_shares
                 FROM outstanding_shares_data
-                WHERE trade_date = '{target_trade_date}'
+                WHERE trade_date = ?
             """
-            shares_df = pd.read_sql_query(query, conn, dtype={
+            shares_df = pd.read_sql_query(query, conn, params=(target_trade_date,), dtype={
                 'corp_code': str,
                 'trade_date': str,
                 'outstanding_shares': 'int64'
@@ -92,15 +93,15 @@ class FinancialAnalyzer:
     def load_stock_prices(self, trade_date_str):
         logging.info(f"Loading stock prices for date {trade_date_str}...")
         with self._get_db_connection() as conn:
-            query = f"""
+            query = """
                 SELECT
                     stock_code,
                     trade_date,
                     close_price
                 FROM stock_prices_data
-                WHERE trade_date = '{trade_date_str}'
+                WHERE trade_date = ?
             """
-            prices_df = pd.read_sql_query(query, conn, dtype={
+            prices_df = pd.read_sql_query(query, conn, params=(trade_date_str,), dtype={
                 'stock_code': str,
                 'trade_date': str,
                 'close_price': 'int64'
@@ -241,17 +242,22 @@ class FinancialAnalyzer:
 
         # Drop rows where essential ratios cannot be calculated (e.g., due to missing base values)
         initial_companies = analysis_df.dropna(subset=['D_E_Ratio', 'Current_Ratio', 'ROE', 'Operating_Cash_Flow'])
-        logging.info(f"Initial candidates after dropping NA for key ratios: {len(initial_companies)} companies.")
+
+        # Define filter constants
+        DEBT_TO_EQUITY_RATIO_THRESHOLD = 1.0  # 100%
+        CURRENT_RATIO_THRESHOLD = 1.5       # 150%
+        ROE_THRESHOLD = 0.10                # 10%
+        OPERATING_CASH_FLOW_THRESHOLD = 0   # > 0
 
         if initial_companies.empty:
             logging.info("No companies remain after dropping NA for essential ratios for Stage 1 & 2.")
             return pd.DataFrame()
 
         # --- Stage 1: Financial Health Check ---
-        logging.info("Applying Stage 1: Financial Health Check (Debt-to-Equity <= 100%, Current Ratio >= 150%)...")
+        logging.info(f"Applying Stage 1: Financial Health Check (Debt-to-Equity <= {DEBT_TO_EQUITY_RATIO_THRESHOLD*100}%, Current Ratio >= {CURRENT_RATIO_THRESHOLD*100}%)...")
         stage1_filtered_companies = initial_companies[
-            (initial_companies['D_E_Ratio'] <= 1.0) &  # 부채비율 100% 이하
-            (initial_companies['Current_Ratio'] >= 1.5) # 유동비율 150% 이상
+            (initial_companies['D_E_Ratio'] <= DEBT_TO_EQUITY_RATIO_THRESHOLD) &  # 부채비율 100% 이하
+            (initial_companies['Current_Ratio'] >= CURRENT_RATIO_THRESHOLD) # 유동비율 150% 이상
         ].copy()
         logging.info(f"Stage 1 passed: {len(stage1_filtered_companies)} companies.")
 
@@ -260,10 +266,10 @@ class FinancialAnalyzer:
             return pd.DataFrame()
 
         # --- Stage 2: Profitability and Asset Value Verification ---
-        logging.info("Applying Stage 2: Profitability and Asset Value Verification (ROE >= 10%, Operating Cash Flow > 0)...")
+        logging.info(f"Applying Stage 2: Profitability and Asset Value Verification (ROE >= {ROE_THRESHOLD*100}%, Operating Cash Flow > {OPERATING_CASH_FLOW_THRESHOLD})...")
         stage2_filtered_companies = stage1_filtered_companies[
-            (stage1_filtered_companies['ROE'] >= 0.10) & # ROE 10% 이상
-            (stage1_filtered_companies['Operating_Cash_Flow'] > 0) # 영업활동 현금흐름 양수
+            (stage1_filtered_companies['ROE'] >= ROE_THRESHOLD) & # ROE 10% 이상
+            (stage1_filtered_companies['Operating_Cash_Flow'] > OPERATING_CASH_FLOW_THRESHOLD) # 영업활동 현금흐름 양수
         ].copy()
         logging.info(f"Stage 2 passed: {len(stage2_filtered_companies)} companies.")
 
@@ -272,7 +278,7 @@ class FinancialAnalyzer:
     def _load_filtered_companies_for_stage3(self, bsns_year, reprt_code):
         logging.info(f"Loading companies from filtered_companies table for {bsns_year}-{reprt_code}...")
         with self._get_db_connection() as conn:
-            query = f"""
+            query = """
                 SELECT
                     fc.corp_code,
                     ci.stock_code,
@@ -281,9 +287,9 @@ class FinancialAnalyzer:
                     fc.reprt_code
                 FROM filtered_companies AS fc
                 JOIN company_info AS ci ON fc.corp_code = ci.corp_code
-                WHERE fc.bsns_year = {bsns_year} AND fc.reprt_code = '{reprt_code}'
+                WHERE fc.bsns_year = ? AND fc.reprt_code = ?
             """
-            filtered_companies_df = pd.read_sql_query(query, conn, dtype={
+            filtered_companies_df = pd.read_sql_query(query, conn, params=(bsns_year, reprt_code), dtype={
                 'corp_code': str,
                 'stock_code': str,
                 'corp_name': str,
@@ -299,22 +305,26 @@ class FinancialAnalyzer:
             logging.warning("Analysis DataFrame is empty, cannot apply Stage 3 filters.")
             return pd.DataFrame()
 
+        # Define filter constants for Stage 3
+        PER_MAX = 15.0
+        PBR_MAX = 1.5
+
         # Companies failing Stage 3 will be logged
         failed_stage3_per = analysis_df[
-            ~((analysis_df['PER'].notna()) & (analysis_df['PER'] > 0) & (analysis_df['PER'] < 15.0))
+            ~((analysis_df['PER'].notna()) & (analysis_df['PER'] > 0) & (analysis_df['PER'] < PER_MAX))
         ]
         for idx, row in failed_stage3_per.iterrows():
-            logging.info(f"Company {row['corp_name']} (PER={row.get('PER', 'N/A'):.2f}) failed Stage 3 (P/E not within 0-15 or N/A).")
+            logging.info(f"Company {row['corp_name']} (PER={row.get('PER', 'N/A'):.2f}) failed Stage 3 (P/E not within 0-{PER_MAX} or N/A).")
 
         failed_stage3_pbr = analysis_df[
-            ~((analysis_df['PBR'].notna()) & (analysis_df['PBR'] > 0) & (analysis_df['PBR'] < 1.5))
+            ~((analysis_df['PBR'].notna()) & (analysis_df['PBR'] > 0) & (analysis_df['PBR'] < PBR_MAX))
         ]
         for idx, row in failed_stage3_pbr.iterrows():
-            logging.info(f"Company {row['corp_name']} (PBR={row.get('PBR', 'N/A'):.2f}) failed Stage 3 (P/B not within 0-1.5 or N/A).")
+            logging.info(f"Company {row['corp_name']} (PBR={row.get('PBR', 'N/A'):.2f}) failed Stage 3 (P/B not within 0-{PBR_MAX} or N/A).")
 
         stage3_filtered_companies = analysis_df[
-            (analysis_df['PER'].notna()) & (analysis_df['PER'] > 0) & (analysis_df['PER'] < 15.0) &
-            (analysis_df['PBR'].notna()) & (analysis_df['PBR'] > 0) & (analysis_df['PBR'] < 1.5)
+            (analysis_df['PER'].notna()) & (analysis_df['PER'] > 0) & (analysis_df['PER'] < PER_MAX) &
+            (analysis_df['PBR'].notna()) & (analysis_df['PBR'] > 0) & (analysis_df['PBR'] < PBR_MAX)
         ].copy()
 
         logging.info(f"Stage 3 passed: {len(stage3_filtered_companies)} companies.")
@@ -355,12 +365,18 @@ def main():
                         help="Specify the analysis stage to run: '1_2' for initial filtering, '3' for valuation metrics, or 'all' for sequential execution.")
     args = parser.parse_args()
 
-    PROJECT_ROOT = '/home/ivjiyeonb/projects/financial_statement/'
-    DB_PATH = os.path.join(PROJECT_ROOT, 'data', 'financial_data.db')
+    PROJECT_ROOT_DIR = Path('/home/ivjiyeonb/projects/financial_statement/')
+    DB_PATH = PROJECT_ROOT_DIR / 'data' / 'financial_data.db'
 
     # --- Configuration for data fetching ---
     TARGET_BSNS_YEAR = 2025
-    TARGET_REPRT_CODE = '11011' # 11013 for Q3, 11012 for Q2, 11011 for Q4 (Annual), 11014 for Q1
+    # Report codes constants
+    Q1_REPRT_CODE = '11014'
+    Q2_REPRT_CODE = '11012'
+    Q3_REPRT_CODE = '11013'
+    ANNUAL_REPRT_CODE = '11011' # Q4 (Annual)
+    
+    TARGET_REPRT_CODE = ANNUAL_REPRT_CODE
 
     try:
         analyzer = FinancialAnalyzer(DB_PATH)
@@ -429,6 +445,8 @@ def main():
                 # Convert numeric columns to string with formatting to handle potential NaN values gracefully
                 display_df = stage3_final_companies_df[['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']].copy()
                 for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']:
+                    # Safely convert to float before formatting
+                    display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
                     display_df[col] = display_df[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
                 print(display_df.to_string())
                 logging.info(f"\nStage 3 completed. {len(stage3_final_companies_df)} companies passed all stages and saved to 'filtered_companies' table.")

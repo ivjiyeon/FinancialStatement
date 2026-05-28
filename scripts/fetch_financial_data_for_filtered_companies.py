@@ -5,18 +5,19 @@ import logging
 import subprocess
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-PROJECT_ROOT = '/home/ivjiyeonb/projects/financial_statement/'
-DB_PATH = os.path.join(PROJECT_ROOT, 'data', 'financial_data.db')
-VENV_KRX_PYTHON = os.path.join(PROJECT_ROOT, 'venv_krx', 'bin', 'python')
-VENV_DART_PYTHON = os.path.join(PROJECT_ROOT, 'venv_dart', 'bin', 'python')
+PROJECT_ROOT = Path('/home/ivjiyeonb/projects/financial_statement/')
+DB_PATH = PROJECT_ROOT / 'data' / 'financial_data.db'
+VENV_KRX_PYTHON = PROJECT_ROOT / 'venv_krx' / 'bin' / 'python'
+VENV_DART_PYTHON = PROJECT_ROOT / 'venv_dart' / 'bin' / 'python'
 
 def _get_db_connection():
     """Establishes a connection to the SQLite database."""
-    return sqlite3.connect(DB_PATH)
+    return sqlite3.connect(str(DB_PATH))
 
 def get_filtered_companies(bsns_year, reprt_code):
     logging.info(f"Fetching filtered companies for {bsns_year}-{reprt_code} from database (raw SQL)...")
@@ -30,8 +31,6 @@ def get_filtered_companies(bsns_year, reprt_code):
                 JOIN company_info AS ci ON fc.corp_code = ci.corp_code
                 WHERE fc.bsns_year = ? AND fc.reprt_code = ?
             """
-            logging.info(f"DEBUG: Executing query: {query}")
-            logging.info(f"DEBUG: With parameters: {(bsns_year, reprt_code)}")
             cursor.execute(query, (bsns_year, reprt_code))
             rows = cursor.fetchall()
             columns = [description[0] for description in cursor.description]
@@ -80,24 +79,24 @@ def init_new_tables():
     except Exception as e:
         logging.error(f"Error initializing new tables: {e}")
 
-def run_krx_data_fetch_script(corp_code, stock_code, start_date, end_date, krx_id, krx_pw):
+def run_krx_data_fetch_script(corp_code: str, stock_code: str, start_date: str, end_date: str, krx_id: str, krx_pw: str) -> bool:
     """
     Executes a separate Python script within venv_krx to fetch KRX data.
     """
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'krx_data_fetch_worker.py')
+    script_path = PROJECT_ROOT / 'scripts' / 'krx_data_fetch_worker.py'
 
     if not os.path.exists(script_path):
         logging.error(f"Krx data fetch worker script not found at {script_path}. Cannot proceed.")
         return False
 
     command = [
-        VENV_KRX_PYTHON,
-        script_path,
+        str(VENV_KRX_PYTHON),
+        str(script_path),
         '--corp_code', corp_code,
         '--stock_code', stock_code,
         '--start_date', start_date,
         '--end_date', end_date,
-        '--db_path', DB_PATH
+        '--db_path', str(DB_PATH)
     ]
     logging.info(f"Executing KRX data fetch for {stock_code} ({corp_code}) from {start_date} to {end_date}...")
     
@@ -118,24 +117,24 @@ def run_krx_data_fetch_script(corp_code, stock_code, start_date, end_date, krx_i
         logging.error(f"An unexpected error occurred during KRX data fetch for {stock_code}: {e}")
         return False
 
-def run_dart_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, db_path, dart_api_key):
+def run_dart_data_fetch_script(corp_code: str, stock_code: str, bsns_year: int, reprt_code: str, db_path: Path, dart_api_key: str) -> bool:
     """
     Executes a separate Python script within venv_dart to fetch DART outstanding shares data.
     """
-    script_path = os.path.join(PROJECT_ROOT, 'scripts', 'dart_data_fetch_worker.py')
+    script_path = PROJECT_ROOT / 'scripts' / 'dart_data_fetch_worker.py'
 
     if not os.path.exists(script_path):
         logging.error(f"DART data fetch worker script not found at {script_path}. Cannot proceed.")
         return False
 
     command = [
-        VENV_DART_PYTHON,
-        script_path,
+        str(VENV_DART_PYTHON),
+        str(script_path),
         '--corp_code', corp_code,
         '--stock_code', stock_code,
         '--bsns_year', str(bsns_year),
         '--reprt_code', reprt_code,
-        '--db_path', db_path
+        '--db_path', str(db_path)
     ]
     logging.info(f"Executing DART data fetch for {stock_code} (Corp Code: {corp_code}, Year: {bsns_year}) using DART API...")
 
@@ -158,7 +157,14 @@ def run_dart_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, db_
 def main():
     # --- Configuration for data fetching ---
     TARGET_BSNS_YEAR = 2025
-    TARGET_REPRT_CODE = '11011' # 11013 for Q3, 11012 for Q2, 11011 for Q4 (Annual), 11014 for Q1
+    
+    # Report codes constants
+    Q1_REPRT_CODE = '11014'
+    Q2_REPRT_CODE = '11012'
+    Q3_REPRT_CODE = '11013'
+    ANNUAL_REPRT_CODE = '11011' # Q4 (Annual)
+
+    TARGET_REPRT_CODE = ANNUAL_REPRT_CODE # 11013 for Q3, 11012 for Q2, 11011 for Q4 (Annual), 11014 for Q1
 
     load_dotenv() # Load .env file
     KRX_ID = os.getenv('KRX_ID')

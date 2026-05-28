@@ -1,5 +1,4 @@
 import os
-import sys
 import logging
 from pykrx import stock
 from datetime import datetime, timedelta
@@ -8,9 +7,9 @@ from datetime import datetime, timedelta
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Hardcode KRX credentials for this test (normally from .env)
-# These will be overridden by environment variables if set by the caller.
-# For testing the worker directly, we might need to set them here,
-# or ensure the parent process sets them. Let's assume parent will set them.
+    # These will be overridden by environment variables if set by the caller.
+    # For testing the worker directly, we might need to set them here,
+    # or ensure the parent process sets them.
 
 def run_test():
     test_stock_code = "005930"  # Samsung Electronics

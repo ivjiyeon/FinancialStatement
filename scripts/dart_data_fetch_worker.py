@@ -6,10 +6,12 @@ import requests
 from datetime import datetime
 import json
 import re
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+DART_API_OUTSTANDING_SHARES_URL = "https://opendart.fss.or.kr/api/stockTotqySttus.json"
 def _get_db_connection(db_path):
     """Establishes a connection to the SQLite database."""
     return sqlite3.connect(db_path)
@@ -18,14 +20,15 @@ def clean_amount(amount_str):
     """Removes commas and converts string to integer, handling empty/None."""
     if amount_str is None or amount_str == '':
         return 0
-    # Use regex to remove all non-numeric characters except for leading minus sign
+    # Use regex to remove all non-digit characters except for a leading minus sign
+    # This assumes the input could be like '-1,234' or '1,234'
     clean_str = re.sub(r'[^\d-]', '', str(amount_str))
-    return int(clean_str) if clean_str else 0
+    return int(clean_str) if clean_str and clean_str != '-' else 0
 
-def fetch_and_store_dart_outstanding_shares(db_path, corp_code, stock_code, bsns_year, reprt_code, dart_api_key):
+def fetch_and_store_dart_outstanding_shares(db_path: Path, corp_code: str, stock_code: str, bsns_year: int, reprt_code: str, dart_api_key: str):
     logging.info(f"Fetching outstanding shares for {corp_code} (stock_code: {stock_code}, bsns_year: {bsns_year}, reprt_code: {reprt_code}) from DART API (stockTotqySttus.json)...")
     
-    url = "https://opendart.fss.or.kr/api/stockTotqySttus.json"
+    url = DART_API_OUTSTANDING_SHARES_URL
     params = {
         'crtfc_key': dart_api_key,
         'corp_code': corp_code,
@@ -94,12 +97,14 @@ def main():
 
     args = parser.parse_args()
 
+    db_path = Path(args.db_path)
+
     DART_API_KEY = os.getenv('DART_API_KEY')
     if not DART_API_KEY:
         logging.error("DART_API_KEY environment variable is not set. Please set it.")
         return
 
-    fetch_and_store_dart_outstanding_shares(args.db_path, args.corp_code, args.stock_code, args.bsns_year, args.reprt_code, DART_API_KEY)
+    fetch_and_store_dart_outstanding_shares(db_path, args.corp_code, args.stock_code, args.bsns_year, args.reprt_code, DART_API_KEY)
 
 if __name__ == '__main__':
     main()
