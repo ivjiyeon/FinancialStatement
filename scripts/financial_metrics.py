@@ -41,15 +41,59 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         stck_clpr = stck_clpr_result[0] if stck_clpr_result else None
 
         # Fetch financial statements data
+        net_profit_or_loss = None
+        profit_reprt_code = None
+        thstrm_add_amount_profit = None
+
+        # Try 'IS' first for ifrs-full_ProfitLoss
         cursor.execute(f"""
             SELECT
-                fsi_profit.thstrm_amount AS net_profit_or_loss,
-                fsi_equity.thstrm_amount AS stock_equity
+                fsi_profit.thstrm_amount,
+                sm.reprt_code,
+                fsi_profit.thstrm_add_amount
             FROM statement_metadata AS sm
             JOIN financial_statement_items AS fsi_profit
                 ON sm.corp_code = fsi_profit.corp_code
                 AND sm.bsns_year = fsi_profit.bsns_year
                 AND sm.reprt_code = fsi_profit.reprt_code
+            WHERE
+                sm.corp_code = '{corp_code}'
+                AND sm.bsns_year = '{bsns_year}'
+                AND fsi_profit.account_id = 'ifrs-full_ProfitLoss'
+                AND fsi_profit.sj_div = 'IS'
+        """)
+        profit_data_is = cursor.fetchone()
+
+        if profit_data_is:
+            net_profit_or_loss, profit_reprt_code, thstrm_add_amount_profit = profit_data_is
+        else:
+            # If not found in 'IS', try 'CIS'
+            cursor.execute(f"""
+                SELECT
+                    fsi_profit.thstrm_amount,
+                    sm.reprt_code,
+                    fsi_profit.thstrm_add_amount
+                FROM statement_metadata AS sm
+                JOIN financial_statement_items AS fsi_profit
+                    ON sm.corp_code = fsi_profit.corp_code
+                    AND sm.bsns_year = fsi_profit.bsns_year
+                    AND sm.reprt_code = fsi_profit.reprt_code
+                WHERE
+                    sm.corp_code = '{corp_code}'
+                    AND sm.bsns_year = '{bsns_year}'
+                    AND fsi_profit.account_id = 'ifrs-full_ProfitLoss'
+                    AND fsi_profit.sj_div = 'CIS'
+            """)
+            profit_data_cis = cursor.fetchone()
+            if profit_data_cis:
+                net_profit_or_loss, profit_reprt_code, thstrm_add_amount_profit = profit_data_cis
+
+        # Fetch stock equity
+        stock_equity = None
+        cursor.execute(f"""
+            SELECT
+                fsi_equity.thstrm_amount
+            FROM statement_metadata AS sm
             JOIN financial_statement_items AS fsi_equity
                 ON sm.corp_code = fsi_equity.corp_code
                 AND sm.bsns_year = fsi_equity.bsns_year
@@ -57,17 +101,41 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
             WHERE
                 sm.corp_code = '{corp_code}'
                 AND sm.bsns_year = '{bsns_year}'
-                AND fsi_profit.account_id = 'ifrs-full_ProfitLoss'
-                AND fsi_profit.sj_div = 'IS'
                 AND fsi_equity.account_id = 'ifrs-full_Equity'
                 AND fsi_equity.sj_div = 'BS'
         """)
-        fs_data = cursor.fetchone()
+        stock_equity_data = cursor.fetchone()
+        if stock_equity_data:
+            stock_equity = stock_equity_data[0]
 
-        logging.info(f"DEBUG {corp_code} ({stock_code}, {bsns_year}) - outstanding_shares: {outstanding_shares}, close_price: {stck_clpr}, fs_data: {fs_data}")
-        if outstanding_shares and stck_clpr and fs_data:
-            net_profit_or_loss, stock_equity = fs_data
-            logging.info(f"DEBUG {corp_code} ({stock_code}, {bsns_year}) - net_profit_or_loss: {net_profit_or_loss}, stock_equity: {stock_equity}")
+        # Apply adjustment for annual report (11011) if net_profit_or_loss was fetched with reprt_code '11011'
+        if net_profit_or_loss is not None and profit_reprt_code == '11011':
+            logging.info(f"Applying 11014 adjustment for corp_code={corp_code}, bsns_year={bsns_year}, original net_profit_or_loss={net_profit_or_loss}")
+            cursor.execute(f"""
+                SELECT
+                    fsi_profit_q3.thstrm_add_amount
+                FROM statement_metadata AS sm_q3
+                JOIN financial_statement_items AS fsi_profit_q3
+                    ON sm_q3.corp_code = fsi_profit_q3.corp_code
+                    AND sm_q3.bsns_year = fsi_profit_q3.bsns_year
+                    AND sm_q3.reprt_code = fsi_profit_q3.reprt_code
+                WHERE
+                    sm_q3.corp_code = '{corp_code}'
+                    AND sm_q3.bsns_year = '{bsns_year}'
+                    AND sm_q3.reprt_code = '11014'  -- Q3 report
+                    AND fsi_profit_q3.account_id = 'ifrs-full_ProfitLoss'
+                    AND (fsi_profit_q3.sj_div = 'IS' OR fsi_profit_q3.sj_div = 'CIS')
+            """)
+            q3_add_amount_result = cursor.fetchone()
+            if q3_add_amount_result and q3_add_amount_result[0] is not None:
+                q3_add_amount = q3_add_amount_result[0]
+                net_profit_or_loss -= q3_add_amount
+                logging.info(f"Subtracted Q3 thstrm_add_amount ({q3_add_amount}). Adjusted net_profit_or_loss={net_profit_or_loss}")
+            else:
+                logging.warning(f"Could not find Q3 (11014) thstrm_add_amount for corp_code={corp_code}, bsns_year={bsns_year} to adjust annual profit.")
+
+        logging.info(f"DEBUG {corp_code} ({stock_code}, {bsns_year}) - outstanding_shares: {outstanding_shares}, close_price: {stck_clpr}, net_profit_or_loss: {net_profit_or_loss}, stock_equity: {stock_equity}")
+        if outstanding_shares and stck_clpr and net_profit_or_loss is not None and stock_equity is not None:
             print(f"stck_clpr: {stck_clpr}")
             # Calculate PER
             if net_profit_or_loss and outstanding_shares:
