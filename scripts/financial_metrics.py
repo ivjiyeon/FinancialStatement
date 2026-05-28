@@ -48,19 +48,15 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         # Try 'IS' first for ifrs-full_ProfitLoss
         cursor.execute(f"""
             SELECT
-                fsi_profit.thstrm_amount,
-                sm.reprt_code,
-                fsi_profit.thstrm_add_amount
-            FROM statement_metadata AS sm
-            JOIN financial_statement_items AS fsi_profit
-                ON sm.corp_code = fsi_profit.corp_code
-                AND sm.bsns_year = fsi_profit.bsns_year
-                AND sm.reprt_code = fsi_profit.reprt_code
+                thstrm_amount,
+                reprt_code,
+                thstrm_add_amount
+            FROM financial_statement_items
             WHERE
-                sm.corp_code = '{corp_code}'
-                AND sm.bsns_year = '{bsns_year}'
-                AND fsi_profit.account_id = 'ifrs-full_ProfitLoss'
-                AND fsi_profit.sj_div = 'IS'
+                corp_code = '{corp_code}'
+                AND bsns_year = '{bsns_year}'
+                AND account_id = 'ifrs-full_ProfitLoss'
+                AND sj_div = 'IS'
         """)
         profit_data_is = cursor.fetchone()
 
@@ -70,19 +66,15 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
             # If not found in 'IS', try 'CIS'
             cursor.execute(f"""
                 SELECT
-                    fsi_profit.thstrm_amount,
-                    sm.reprt_code,
-                    fsi_profit.thstrm_add_amount
-                FROM statement_metadata AS sm
-                JOIN financial_statement_items AS fsi_profit
-                    ON sm.corp_code = fsi_profit.corp_code
-                    AND sm.bsns_year = fsi_profit.bsns_year
-                    AND sm.reprt_code = fsi_profit.reprt_code
+                    thstrm_amount,
+                    reprt_code,
+                    thstrm_add_amount
+                FROM financial_statement_items
                 WHERE
-                    sm.corp_code = '{corp_code}'
-                    AND sm.bsns_year = '{bsns_year}'
-                    AND fsi_profit.account_id = 'ifrs-full_ProfitLoss'
-                    AND fsi_profit.sj_div = 'CIS'
+                    corp_code = '{corp_code}'
+                    AND bsns_year = '{bsns_year}'
+                    AND account_id = 'ifrs-full_ProfitLoss'
+                    AND sj_div = 'CIS'
             """)
             profit_data_cis = cursor.fetchone()
             if profit_data_cis:
@@ -92,17 +84,13 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         stock_equity = None
         cursor.execute(f"""
             SELECT
-                fsi_equity.thstrm_amount
-            FROM statement_metadata AS sm
-            JOIN financial_statement_items AS fsi_equity
-                ON sm.corp_code = fsi_equity.corp_code
-                AND sm.bsns_year = fsi_equity.bsns_year
-                AND sm.reprt_code = fsi_equity.reprt_code
+                thstrm_amount
+            FROM financial_statement_items
             WHERE
-                sm.corp_code = '{corp_code}'
-                AND sm.bsns_year = '{bsns_year}'
-                AND fsi_equity.account_id = 'ifrs-full_Equity'
-                AND fsi_equity.sj_div = 'BS'
+                corp_code = '{corp_code}'
+                AND bsns_year = '{bsns_year}'
+                AND account_id = 'ifrs-full_Equity'
+                AND sj_div = 'BS'
         """)
         stock_equity_data = cursor.fetchone()
         if stock_equity_data:
@@ -113,18 +101,14 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
             logging.info(f"Applying 11014 adjustment for corp_code={corp_code}, bsns_year={bsns_year}, original net_profit_or_loss={net_profit_or_loss}")
             cursor.execute(f"""
                 SELECT
-                    fsi_profit_q3.thstrm_add_amount
-                FROM statement_metadata AS sm_q3
-                JOIN financial_statement_items AS fsi_profit_q3
-                    ON sm_q3.corp_code = fsi_profit_q3.corp_code
-                    AND sm_q3.bsns_year = fsi_profit_q3.bsns_year
-                    AND sm_q3.reprt_code = fsi_profit_q3.reprt_code
+                    thstrm_add_amount
+                FROM financial_statement_items
                 WHERE
-                    sm_q3.corp_code = '{corp_code}'
-                    AND sm_q3.bsns_year = '{bsns_year}'
-                    AND sm_q3.reprt_code = '11014'  -- Q3 report
-                    AND fsi_profit_q3.account_id = 'ifrs-full_ProfitLoss'
-                    AND (fsi_profit_q3.sj_div = 'IS' OR fsi_profit_q3.sj_div = 'CIS')
+                    corp_code = '{corp_code}'
+                    AND bsns_year = '{bsns_year}'
+                    AND reprt_code = '11014'  -- Q3 report
+                    AND account_id = 'ifrs-full_ProfitLoss'
+                    AND (sj_div = 'IS' OR sj_div = 'CIS')
             """)
             q3_add_amount_result = cursor.fetchone()
             if q3_add_amount_result and q3_add_amount_result[0] is not None:
