@@ -451,3 +451,34 @@ def init_db(db_path):
     finally:
         if conn:
             conn.close()
+
+
+def delete_old_financial_data(db_path, bsns_year, reprt_code):
+    """
+    Deletes old financial data for a specific business year and report code from the database.
+    This now targets the new 'statement_metadata' and 'financial_statement_items' tables.
+    """
+    tables_to_clean = ['financial_statement_items', 'statement_metadata'] # Order matters if no cascade delete
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            # First, delete from financial_statement_items where the statement_id is linked to statement_metadata
+            # with the target bsns_year and reprt_code.
+            cursor.execute(f"""
+                DELETE FROM financial_statement_items
+                WHERE statement_id IN (
+                    SELECT id FROM statement_metadata
+                    WHERE bsns_year = ? AND reprt_code = ?
+                )
+            """, (bsns_year, reprt_code))
+            
+            # Then, delete from statement_metadata
+            cursor.execute(f"DELETE FROM statement_metadata WHERE bsns_year = ? AND reprt_code = ?", (bsns_year, reprt_code))
+            
+            conn.commit()
+            logging.info(f"Cleaned old data for year {bsns_year} and report code {reprt_code} from tables: {', '.join(tables_to_clean)}")
+    except sqlite3.Error as e:
+        logging.error(f"SQLite error during data cleanup: {e}")
+    except Exception as e:
+        logging.error(f"Error cleaning old financial data: {e}")

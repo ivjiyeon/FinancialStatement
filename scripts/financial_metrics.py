@@ -121,7 +121,7 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
         if outstanding_shares and close_price and net_profit_or_loss is not None and stock_equity is not None:
             # Calculate PER
             if net_profit_or_loss and outstanding_shares:
-                eps = net_profit_or_loss / outstanding_shares
+                eps = net_profit_or_loss / outstanding_shares * 4
                 if eps > 0:
                     per = close_price / eps
 

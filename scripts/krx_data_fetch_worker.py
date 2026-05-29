@@ -14,7 +14,7 @@ def _get_db_connection(db_path: Path):
     return sqlite3.connect(str(db_path))
 
 def fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path: Path, stock_code: str, start_date: str, end_date: str):
-    logging.info(f"Fetching last day's OHLCV data for stock_prices_data for {stock_code} from {start_date} to {end_date}...")
+    #logging.info(f"Fetching last day's OHLCV data for stock_prices_data for {stock_code} from {start_date} to {end_date}...")
     try:
         df = stock.get_market_ohlcv_by_date(start_date, end_date, stock_code)
 
@@ -59,36 +59,6 @@ def fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path: Path, stock_co
     except Exception as e:
         logging.error(f"Error fetching/storing last day's OHLCV data for {stock_code} in stock_prices_data: {e}")
 
-def fetch_and_store_outstanding_shares(db_path: Path, corp_code: str, stock_code: str, start_date: str, end_date: str):
-    logging.info(f"Fetching outstanding shares for {corp_code} (stock_code: {stock_code}) from {start_date} to {end_date}...")
-    try:
-        df_cap = stock.get_market_cap_by_date(start_date, end_date, stock_code)
-
-        if df_cap.empty:
-            logging.warning(f"No market cap data found for {corp_code} (stock_code: {stock_code}) from {start_date} to {end_date}. Skipping storage.")
-            return
-        
-        # Select only the last row (most recent day)
-        last_row = df_cap.iloc[-1]
-        
-        # Extract data for the last day
-        trade_date = last_row.name.strftime('%Y%m%d') # Index is datetime, so last_row.name is the date
-        outstanding_shares = last_row['상장주식수']
-
-        with _get_db_connection(db_path) as conn:
-            cursor = conn.cursor()
-            # Use UPSERT to update if (corp_code, stock_code, trade_date) exists, insert otherwise
-            cursor.execute('''
-                INSERT INTO outstanding_shares_data (corp_code, stock_code, trade_date, outstanding_shares)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(corp_code, stock_code, trade_date) DO UPDATE SET
-                    outstanding_shares = excluded.outstanding_shares
-            ''', (corp_code, stock_code, trade_date, outstanding_shares))
-            conn.commit()
-        logging.info(f"Successfully stored outstanding shares for {corp_code}.")
-    except Exception as e:
-        logging.error(f"Error fetching/storing outstanding shares for {corp_code}: {e}")
-
 def main():
     parser = argparse.ArgumentParser(description='Fetch KRX stock data and store in DB.')
     parser.add_argument('--corp_code', type=str, required=True, help='Corporate code')
@@ -104,9 +74,6 @@ def main():
 
     # Call the existing function for OHLCV data
     fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path, args.stock_code, args.start_date, args.end_date)
-    
-    # Call the existing function for outstanding shares
-    fetch_and_store_outstanding_shares(db_path, args.corp_code, args.stock_code, args.start_date, args.end_date)
 
 if __name__ == '__main__':
     main()

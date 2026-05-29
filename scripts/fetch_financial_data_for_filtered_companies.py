@@ -98,7 +98,7 @@ def run_krx_data_fetch_script(corp_code: str, stock_code: str, start_date: str, 
         '--end_date', end_date,
         '--db_path', str(DB_PATH)
     ]
-    logging.info(f"Executing KRX data fetch for {stock_code} ({corp_code}) from {start_date} to {end_date}...")
+    #logging.info(f"Executing KRX data fetch for {stock_code} ({corp_code}) from {start_date} to {end_date}...")
     
     subprocess_env = os.environ.copy()
     subprocess_env['KRX_ID'] = krx_id
@@ -106,9 +106,9 @@ def run_krx_data_fetch_script(corp_code: str, stock_code: str, start_date: str, 
 
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True, env=subprocess_env)
-        logging.info(f"Krx data fetch for {stock_code} completed. Output:\n{result.stdout}")
-        if result.stderr:
-            logging.warning(f"Krx data fetch for {stock_code} stderr:\n{result.stderr}")
+        #logging.info(f"Krx data fetch for {stock_code} completed. Output:\n{result.stdout}")
+        #if result.stderr:
+        #    logging.warning(f"Krx data fetch for {stock_code} stderr:\n{result.stderr}")
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"Krx data fetch for {stock_code} failed with error:\n{e.stderr}\n{e.stdout}")
@@ -136,16 +136,16 @@ def run_dart_data_fetch_script(corp_code: str, stock_code: str, bsns_year: int, 
         '--reprt_code', reprt_code,
         '--db_path', str(db_path)
     ]
-    logging.info(f"Executing DART data fetch for {stock_code} (Corp Code: {corp_code}, Year: {bsns_year}) using DART API...")
+    #logging.info(f"Executing DART data fetch for {stock_code} (Corp Code: {corp_code}, Year: {bsns_year}) using DART API...")
 
     subprocess_env = os.environ.copy()
     subprocess_env['DART_API_KEY'] = dart_api_key
 
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True, env=subprocess_env)
-        logging.info(f"DART data fetch for {stock_code} completed. Output:\n{result.stdout}")
-        if result.stderr:
-            logging.warning(f"DART data fetch for {stock_code} stderr:\n{result.stderr}")
+        #logging.info(f"DART data fetch for {stock_code} completed. Output:\n{result.stdout}")
+        #if result.stderr:
+        #    logging.warning(f"DART data fetch for {stock_code} stderr:\n{result.stderr}")
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"DART data fetch for {stock_code} failed with error:\n{e.stderr}\n{e.stdout}")

@@ -16,41 +16,12 @@ from dart.util import (
     get_db_connection,
     insert_financial_data,
     get_corp_codes,
-    fetch_financial_statements
+    fetch_financial_statements,
+    delete_old_financial_data
 )
 
 
-def delete_old_financial_data(db_path, bsns_year, reprt_code):
-    """
-    Deletes old financial data for a specific business year and report code from the database.
-    This now targets the new 'statement_metadata' and 'financial_statement_items' tables.
-    """
-    tables_to_clean = ['financial_statement_items', 'statement_metadata'] # Order matters if no cascade delete
-
-    try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            # First, delete from financial_statement_items where the statement_id is linked to statement_metadata
-            # with the target bsns_year and reprt_code.
-            cursor.execute(f"""
-                DELETE FROM financial_statement_items
-                WHERE statement_id IN (
-                    SELECT id FROM statement_metadata
-                    WHERE bsns_year = ? AND reprt_code = ?
-                )
-            """, (bsns_year, reprt_code))
-            
-            # Then, delete from statement_metadata
-            cursor.execute(f"DELETE FROM statement_metadata WHERE bsns_year = ? AND reprt_code = ?", (bsns_year, reprt_code))
-            
-            conn.commit()
-            logging.info(f"Cleaned old data for year {bsns_year} and report code {reprt_code} from tables: {', '.join(tables_to_clean)}")
-    except sqlite3.Error as e:
-        logging.error(f"SQLite error during data cleanup: {e}")
-    except Exception as e:
-        logging.error(f"Error cleaning old financial data: {e}")
-
-
+ 
 def main():
     # Load environment variables from .env file
     # Assuming .env is in the parent directory relative to the script
@@ -100,7 +71,7 @@ def main():
 
     # --- Update Corporate Codes ---
     # This ensures the company_info table in the DB is up-to-date
-    get_corp_codes(api_key, DB_PATH)
+    #get_corp_codes(api_key, DB_PATH)
 
     # --- Determine the most recent *completed* quarter dynamically ---
     current_date = datetime.now()
@@ -160,11 +131,14 @@ def main():
     # --- Fetch Financial Statements ---
     processed_count = 0
     for index, company in companies_to_process.iterrows():
+        processed_count += 1
+        if processed_count < 439:
+            continue
         corp_code = company['corp_code']
         stock_code = company['stock_code']
         corp_name = company['corp_name']
 
-        logging.info(f"Processing {processed_count + 1}/{len(companies_to_process)}: {corp_name} ({stock_code}/{corp_code}) for {report_year} {display_quarter}")
+        logging.info(f"Processing {processed_count}/{len(companies_to_process)}: {corp_name} ({stock_code}/{corp_code}) for {report_year} {display_quarter}")
 
         try:
             # Fetch financial statements
@@ -179,7 +153,7 @@ def main():
 
                 # Store the financial data in the new normalized schema
                 with get_db_connection(DB_PATH) as conn:
-                    insert_financial_data(conn, finstate_df)
+                    insert_financial_data(conn, finstate_df, 'financial_statements')
 
                 logging.info(f"Successfully fetched and stored financial statements for {corp_name} ({stock_code}).")
             else:
@@ -188,7 +162,7 @@ def main():
         except Exception as e:
             logging.error(f"Error fetching/storing financial statements for {corp_name} ({stock_code}): {e}")
 
-        processed_count += 1
+        #processed_count += 1
         time.sleep(API_CALL_DELAY) # Rate limiting
 
     logging.info("Script finished: All financial statements processed.")

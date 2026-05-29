@@ -10,6 +10,7 @@ from pathlib import Path
 # Dynamically add the project root to sys.path
 # This assumes the script is in a subdirectory like 'scripts/'
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LOG_FILE = os.path.join(PROJECT_ROOT, 'scripts/analyze_and_identify_undervalued.log')
 sys.path.append(str(PROJECT_ROOT))
 
 from dart.util import _get_reporting_period_end_date
@@ -359,7 +360,7 @@ class FinancialAnalyzer:
         logging.info("Filtered companies saved successfully.")
 
 def main():
-    logging.basicConfig(filename='scripts/analyze_and_identify_undervalued.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s') # Configure logging
+    logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s') # Configure logging
     parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
     parser.add_argument('--stage', type=str, choices=['1_2', '3', 'all'], default='all',
                         help="Specify the analysis stage to run: '1_2' for initial filtering, '3' for valuation metrics, or 'all' for sequential execution.")

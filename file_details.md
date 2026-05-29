@@ -21,10 +21,10 @@ This directory contains scripts related to fetching and processing financial dat
 - `fetch_initial_data.py`: A new script specifically designed to extract one year of historical financial statement data for all companies, now inserting into the `statement_metadata` and `financial_statement_items` tables.
 - `get_db_schema.py`: Script for defining or retrieving the database schema used for financial data storage.
 - `get_financial_statements.log`: Log file recording the execution and activities of the `get_financial_statements.py` script.
-- `get_financial_statements.py`: The primary script responsible for fetching the *latest* financial statements from the DART API. It now uses common utility functions from `dart/util.py` and includes logic to remove financial data older than 1.5 years.
+    - `get_financial_statements.py`: The primary script responsible for fetching the *latest* financial statements from the DART API. It now uses common utility functions from `dart/util.py`.
 - `populate_company_info.py`: Script to populate or update company information, such as corporate codes, in the project database.
 - `store_financial_data_to_db.py`: Script dedicated to inserting or updating processed financial statement data into the SQLite database.
-- `util.py`: A utility file containing common functions shared by DART-related scripts (e.g., XML/JSON parsing, database connection, data insertion into new `statement_metadata` and `financial_statement_items` tables, data cleaning, etc.).
+- `util.py`: A utility file containing common functions shared by DART-related scripts (e.g., XML/JSON parsing, database connection, data insertion into new `statement_metadata` and `financial_statement_items` tables, data cleaning, `delete_old_financial_data`, etc.).
 
 ## `data/` Directory (Data Storage)
 
@@ -57,6 +57,7 @@ This directory contains general utility scripts for the project.
 - `analyze_and_identify_undervalued.log`: Log file for the financial analysis script.
 - `analyze_and_identify_undervalued.py`: Python script for analyzing financial data.
 - `financial_metrics.py`: Module containing functions for calculating financial metrics like PER and PBR.
+    - `clear_analysis_tables.py`: Python script to clear specific analysis-related tables (`outstanding_shares`, `filtered_companies`, `stock_prices`) in the database.
 - `fetch_financial_data_for_filtered_companies.py`: Python script to fetch stock prices and outstanding shares for companies identified as undervalued in `analyze_and_identify_undervalued.py`, storing data in new, dedicated database tables.
 - `krx_data_fetch_worker.py`: Helper script executed within `venv_krx` to fetch stock prices and outstanding shares using `pykrx`.
    - `migrate_db.py`: Script used for migrating data from the old `financial_statements` table to the new `statement_metadata` and `financial_statement_items` tables.
