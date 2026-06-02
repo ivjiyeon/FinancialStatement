@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOG_FILE = os.path.join(PROJECT_ROOT, 'scripts/analyze_and_identify_undervalued.log')
 sys.path.append(str(PROJECT_ROOT))
 
-from dart.util import _get_reporting_period_end_date
+from dart.util import _get_reporting_period_end_date, get_display_quarter_from_report_code
 from scripts.financial_metrics import calculate_per_pbr
 
 class FinancialAnalyzer:
@@ -381,14 +381,7 @@ def main():
     
     TARGET_REPRT_CODE = ANNUAL_REPRT_CODE
 
-    # Map report code to display quarter
-    REPORT_CODE_TO_QUARTER = {
-        Q1_REPRT_CODE: "Q1",
-        Q2_REPRT_CODE: "Q2",
-        Q3_REPRT_CODE: "Q3",
-        ANNUAL_REPRT_CODE: "Annual"
-    }
-    display_quarter = REPORT_CODE_TO_QUARTER.get(TARGET_REPRT_CODE, "Unknown Quarter")
+    display_quarter = get_display_quarter_from_report_code(TARGET_REPRT_CODE)
 
     report_output = [] # List to store report sections
 

@@ -29,6 +29,13 @@ def _get_reporting_period_end_date(bsns_year, reprt_code):
         return f"{bsns_year}1231"
 
 
+def get_display_quarter_from_report_code(reprt_code):
+    if reprt_code == '11011': return 'Annual'
+    elif reprt_code == '11014': return 'Q3'
+    elif reprt_code == '11012': return 'Q2'
+    elif reprt_code == '11013': return 'Q1'
+    else: return 'Unknown Quarter'
+
 def _parse_xml_response(xml_string, root_tag, item_tag):
     data = []
     try:
