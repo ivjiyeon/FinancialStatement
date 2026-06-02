@@ -27,7 +27,7 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
             SELECT outstanding_shares FROM outstanding_shares_data
             WHERE stock_code = ?
             ORDER BY trade_date DESC LIMIT 1
-        """)
+        """, (stock_code,))
         outstanding_shares_result = cursor.fetchone()
         outstanding_shares = outstanding_shares_result[0] if outstanding_shares_result else None
 
