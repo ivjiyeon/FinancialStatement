@@ -429,9 +429,8 @@ def main():
             
             analysis_df_stage3 = analyzer.calculate_financial_ratios(financial_df_stage3, company_info_df)
 
-            logging.info(f"--- Companies entering Stage 3 with PER/PBR values ---")
+            print("Healthy Companies:")
             print(analysis_df_stage3[['corp_name', 'stock_code', 'PER', 'PBR']].to_string())
-            logging.info(f"-----------------------------------------------------")
 
             stage3_final_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
 
@@ -442,7 +441,7 @@ def main():
                     TARGET_REPRT_CODE,
                     append=False
                 )
-                logging.info(f"--- Undervalued Companies Identified (Final List) ---")
+                print("Undervalued Companies:")
                 # Convert numeric columns to string with formatting to handle potential NaN values gracefully
                 display_df = stage3_final_companies_df[['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']].copy()
                 for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']:
