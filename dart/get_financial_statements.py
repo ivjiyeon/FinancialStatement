@@ -71,7 +71,7 @@ def main():
 
     # --- Update Corporate Codes ---
     # This ensures the company_info table in the DB is up-to-date
-    #get_corp_codes(api_key, DB_PATH)
+    get_corp_codes(api_key, DB_PATH)
 
     # --- Determine the most recent *completed* quarter dynamically ---
     current_date = datetime.now()
@@ -132,8 +132,7 @@ def main():
     processed_count = 0
     for index, company in companies_to_process.iterrows():
         processed_count += 1
-        if processed_count < 439:
-            continue
+
         corp_code = company['corp_code']
         stock_code = company['stock_code']
         corp_name = company['corp_name']

@@ -463,14 +463,10 @@ def delete_old_financial_data(db_path, bsns_year, reprt_code):
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-            # First, delete from financial_statement_items where the statement_id is linked to statement_metadata
-            # with the target bsns_year and reprt_code.
+            # Delete from financial_statement_items based on bsns_year and reprt_code
             cursor.execute(f"""
                 DELETE FROM financial_statement_items
-                WHERE statement_id IN (
-                    SELECT id FROM statement_metadata
-                    WHERE bsns_year = ? AND reprt_code = ?
-                )
+                WHERE bsns_year = ? AND reprt_code = ?
             """, (bsns_year, reprt_code))
             
             # Then, delete from statement_metadata
