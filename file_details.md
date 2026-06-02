@@ -55,8 +55,8 @@ This directory houses scripts focused on acquiring and processing sector-specifi
 This directory contains general utility scripts for the project.
 
 - `analyze_and_identify_undervalued.log`: Log file for the financial analysis script.
-- `analyze_and_identify_undervalued.py`: Python script for analyzing financial data, now outputs formatted reports for Healthy and Undervalued Companies, or a specific message if no companies are found.
-- `financial_metrics.py`: Module containing functions for calculating financial metrics like PER and PBR. (Updated to fix SQL parameter binding error)
+- `analyze_and_identify_undervalued.py`: Python script for analyzing financial data, now outputs formatted reports for Healthy and Undervalued Companies, or a specific message if no companies are found. Dynamically determines report year/quarter.
+- `dart/util.py`: Added `get_display_quarter_from_report_code` function, then reverted and improved dynamic determination of report code and year.
     - `clear_analysis_tables.py`: Python script to clear specific analysis-related tables (`outstanding_shares`, `filtered_companies`, `stock_prices`) in the database.
 - `fetch_financial_data_for_filtered_companies.py`: Python script to fetch stock prices and outstanding shares for companies identified as undervalued in `analyze_and_identify_undervalued.py`, storing data in new, dedicated database tables.
 - `krx_data_fetch_worker.py`: Helper script executed within `venv_krx` to fetch stock prices and outstanding shares using `pykrx`.
