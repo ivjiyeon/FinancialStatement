@@ -493,14 +493,14 @@ def main():
 
     except FileNotFoundError as e:
         logging.error(e)
-        print(f"Error: {e}") # Also print to stdout for visibility
+        logging.error(f"Error: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-        print(f"An unexpected error occurred: {e}") # Also print to stdout for visibility
+        logging.error(f"An unexpected error occurred: {e}")
     
     # If no companies were found for reporting, generate the default message
     if not report_output:
-        return f"No companies detected as healthy nor undervalued for {TARGET_BSNS_YEAR} {display_quarter}."
+        return f"No companies detected as healthy nor undervalued for {TARGET_BSNS_YEAR} {TARGET_REPRT_CODE}."
     
     return "\n".join(report_output)
 
