@@ -106,9 +106,9 @@ def run_krx_data_fetch_script(corp_code: str, stock_code: str, start_date: str, 
 
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True, env=subprocess_env)
-        #logging.info(f"Krx data fetch for {stock_code} completed. Output:\n{result.stdout}")
-        #if result.stderr:
-        #    logging.warning(f"Krx data fetch for {stock_code} stderr:\n{result.stderr}")
+        logging.info(f"Krx data fetch for {stock_code} completed. Output:\n{result.stdout}")
+        if result.stderr:
+            logging.warning(f"Krx data fetch for {stock_code} stderr:\n{result.stderr}")
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"Krx data fetch for {stock_code} failed with error:\n{e.stderr}\n{e.stdout}")
@@ -143,9 +143,9 @@ def run_dart_data_fetch_script(corp_code: str, stock_code: str, bsns_year: int, 
 
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True, env=subprocess_env)
-        #logging.info(f"DART data fetch for {stock_code} completed. Output:\n{result.stdout}")
-        #if result.stderr:
-        #    logging.warning(f"DART data fetch for {stock_code} stderr:\n{result.stderr}")
+        logging.info(f"DART data fetch for {stock_code} completed. Output:\n{result.stdout}")
+        if result.stderr:
+            logging.warning(f"DART data fetch for {stock_code} stderr:\n{result.stderr}")
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"DART data fetch for {stock_code} failed with error:\n{e.stderr}\n{e.stdout}")
@@ -156,15 +156,15 @@ def run_dart_data_fetch_script(corp_code: str, stock_code: str, bsns_year: int, 
 
 def main():
     # --- Configuration for data fetching ---
-    TARGET_BSNS_YEAR = 2025
+    TARGET_BSNS_YEAR = os.getenv('TARGET_BSNS_YEAR')
+    TARGET_REPRT_CODE = os.getenv('TARGET_REPRT_CODE')
+    current_date = datetime.now()
     
-    # Report codes constants
+    # Report codes constants (kept for context, but values determined dynamically)
     Q1_REPRT_CODE = '11014'
     Q2_REPRT_CODE = '11012'
     Q3_REPRT_CODE = '11013'
     ANNUAL_REPRT_CODE = '11011' # Q4 (Annual)
-
-    TARGET_REPRT_CODE = ANNUAL_REPRT_CODE # 11013 for Q3, 11012 for Q2, 11011 for Q4 (Annual), 11014 for Q1
 
     load_dotenv() # Load .env file
     KRX_ID = os.getenv('KRX_ID')
@@ -174,9 +174,12 @@ def main():
     if not KRX_ID or not KRX_PW:
         logging.error("KRX_ID or KRX_PW environment variables are not set. Please set them in the .env file or ensure it's loaded.")
         return
+    logging.info(f"KRX_ID set: {bool(KRX_ID)}")
+
     if not DART_API_KEY:
         logging.error("DART_API_KEY environment variable is not set. Please set it in the .env file or ensure it's loaded.")
         return
+    logging.info(f"DART_API_KEY set: {bool(DART_API_KEY)}")
 
     init_new_tables()
     
@@ -186,13 +189,8 @@ def main():
         logging.info("No filtered companies found to fetch data for.")
         return
 
-    # Determine date range for fetching stock prices
-    end_date_obj = datetime.now()
-    start_date_obj = end_date_obj - timedelta(days=7)
-    end_date = end_date_obj.strftime("%Y%m%d")
-    start_date = start_date_obj.strftime("%Y%m%d")
 
-    logging.info(f"Fetching data for {len(filtered_companies_list)} companies from {start_date} to {end_date}...")
+    logging.info(f"Fetching data for {len(filtered_companies_list)} companies...")
     for company_data in filtered_companies_list:
         corp_code = company_data['corp_code']
         stock_code = company_data['stock_code']
@@ -200,10 +198,12 @@ def main():
         reprt_code = company_data['reprt_code']
 
         logging.info(f"Processing {stock_code} (Corp Code: {corp_code})...")
-        # Fetch KRX stock prices (OHLCV)
-        run_krx_data_fetch_script(corp_code, stock_code, start_date, end_date, KRX_ID, KRX_PW)
+        start_date_krx = (current_date - timedelta(days=365)).strftime('%Y%m%d')
+        end_date_krx = current_date.strftime('%Y%m%d')
+        # Fetch KRX stock prices (OHLCV) - using calculated start and end dates
+        run_krx_data_fetch_script(corp_code, stock_code, start_date_krx, end_date_krx, KRX_ID, KRX_PW)
         
-        # Fetch DART outstanding shares
+        # Fetch DART outstanding shares - without trade_date
         run_dart_data_fetch_script(corp_code, stock_code, bsns_year, reprt_code, DB_PATH, DART_API_KEY)
     
     logging.info("Finished fetching financial data for filtered companies.")

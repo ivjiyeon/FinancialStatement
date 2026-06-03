@@ -26,7 +26,7 @@ if __name__ == "__main__":
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DB_PATH = os.path.join(PROJECT_ROOT, 'data', 'financial_data.db')
     
-    tables = ['outstanding_shares', 'filtered_companies', 'stock_prices']
+    tables = ['outstanding_shares_data', 'filtered_companies', 'stock_prices_data']
     
     logging.info(f"Starting to clear tables: {tables} in {DB_PATH}")
     clear_tables(DB_PATH, tables)

@@ -25,7 +25,7 @@ def clean_amount(amount_str):
     clean_str = re.sub(r'[^\d-]', '', str(amount_str))
     return int(clean_str) if clean_str and clean_str != '-' else 0
 
-def fetch_and_store_dart_outstanding_shares(db_path: Path, corp_code: str, stock_code: str, bsns_year: int, reprt_code: str, dart_api_key: str):
+def fetch_and_store_dart_outstanding_shares(db_path: Path, corp_code: str, stock_code: str, bsns_year: int, reprt_code: str, dart_api_key: str, trade_date: str):
     #logging.info(f"Fetching outstanding shares for {corp_code} (stock_code: {stock_code}, bsns_year: {bsns_year}, reprt_code: {reprt_code})...")
     
     url = DART_API_OUTSTANDING_SHARES_URL
@@ -52,13 +52,10 @@ def fetch_and_store_dart_outstanding_shares(db_path: Path, corp_code: str, stock
         
         # Process items to find the relevant outstanding shares
         common_outstanding_shares = 0
-        trade_date = None
+        # The trade_date is passed as an argument to the function.
+        # common_outstanding_shares, trade_date are now ready for insertion
 
-        # Collect trade_date from any item, preferably the latest or first valid one
-        if items and 'rcept_dt' in items[0]:
-            trade_date = items[0]['rcept_dt']
-        else:
-            trade_date = datetime.now().strftime('%Y%m%d') # Fallback if rcept_dt is missing
+
 
         for item in items:
             # Financial analyst recommended using common stock (보통주) for ratio calculations.
@@ -94,6 +91,7 @@ def main():
     parser.add_argument('--bsns_year', type=int, required=True, help='Business year (e.g., 2023)')
     parser.add_argument('--reprt_code', type=str, required=True, help='Report code (e.g., 11011 for Annual)')
     parser.add_argument('--db_path', type=str, required=True, help='Path to the SQLite database')
+    parser.add_argument('--trade_date', type=str, required=True, help='Trade date for outstanding shares (YYYYMMDD)')
 
     args = parser.parse_args()
 
@@ -104,7 +102,7 @@ def main():
         logging.error("DART_API_KEY environment variable is not set. Please set it.")
         return
 
-    fetch_and_store_dart_outstanding_shares(db_path, args.corp_code, args.stock_code, args.bsns_year, args.reprt_code, DART_API_KEY)
+    fetch_and_store_dart_outstanding_shares(db_path, args.corp_code, args.stock_code, args.bsns_year, args.reprt_code, DART_API_KEY, args.trade_date)
 
 if __name__ == '__main__':
     main()

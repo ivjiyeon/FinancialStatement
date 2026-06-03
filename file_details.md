@@ -34,8 +34,10 @@ This directory is used for storing various datasets, including financial stateme
 - `cf.csv`: CSV file likely containing Cash Flow data.
 - `financial_data.db`: The SQLite database storing all collected financial and company information, now containing `statement_metadata` and `financial_statement_items` tables.
 - `is.csv`: CSV file likely containing Income Statement data.
-- `krx_sector_data.csv`: CSV file storing sector-specific data acquired from the Korea Exchange (KRX).
-- `statement_metadata`: Table storing metadata for financial statements (e.g., company, year, report code, financial statement type).
+    - `krx_sector_data.csv`: CSV file storing sector-specific data acquired from the Korea Exchange (KRX).
+    - `outstanding_shares_data`: Table storing historical outstanding shares data for each stock.
+    - `stock_prices_data`: Table storing historical stock price data for each stock.
+    - `statement_metadata`: Table storing metadata for financial statements (e.g., company, year, report code, financial statement type).
 - `financial_statement_items`: Table storing detailed account items for financial statements.
 
 ## `krx_sector/` Directory (KRX Sector Data Acquisition)
@@ -55,7 +57,7 @@ This directory houses scripts focused on acquiring and processing sector-specifi
 This directory contains general utility scripts for the project.
 
 - `analyze_and_identify_undervalued.log`: Log file for the financial analysis script.
-- `analyze_and_identify_undervalued.py`: Python script for analyzing financial data, now outputs formatted reports for Healthy and Undervalued Companies, or a specific message if no companies are found. Dynamically determines report year/quarter.
+- `analyze_and_identify_undervalued.py`: Python script for analyzing financial data, now outputs formatted reports for Healthy and Undervalued Companies, or a specific message if no companies are found. Dynamically determines report year/quarter. Healthy Companies report now includes sector classification, and both reports feature improved spacing and metric formatting.
 - `financial_metrics.py`: Module containing functions for calculating financial metrics like PER, PBR, EPS, and BPS. (Updated to fix SQL parameter binding error and include EPS/BPS returns).
 
     - `clear_analysis_tables.py`: Python script to clear specific analysis-related tables (`outstanding_shares`, `filtered_companies`, `stock_prices`) in the database.

@@ -11,22 +11,9 @@ import zipfile
 import io
 import json
 
-def _get_reporting_period_end_date(bsns_year, reprt_code):
-    """
-    Determines the estimated end date of the reporting period based on bsns_year and reprt_code.
-    Returns date in 'YYYYMMDD' format.
-    """
-    if reprt_code == '11011':  # Q4/Annual
-        return f"{bsns_year}1231"
-    elif reprt_code == '11014': # Q3
-        return f"{bsns_year}0930"
-    elif reprt_code == '11012': # Q2
-        return f"{bsns_year}0630"
-    elif reprt_code == '11013': # Q1
-        return f"{bsns_year}0331"
-    else:
-        logging.warning(f"Unknown reprt_code: {reprt_code}. Returning end of year as default.")
-        return f"{bsns_year}1231"
+
+
+
 
 
 def _parse_xml_response(xml_string, root_tag, item_tag):
@@ -422,25 +409,6 @@ def init_db(db_path):
                 thstrm_add_amount INTEGER,
                 PRIMARY KEY (corp_code, bsns_year, reprt_code, sj_div, account_id),
                 FOREIGN KEY (corp_code, bsns_year, reprt_code, sj_div) REFERENCES statement_metadata(corp_code, bsns_year, reprt_code, sj_div)
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS outstanding_shares (
-                corp_code TEXT,
-                bsns_year INTEGER,
-                reprt_code TEXT,
-                outstanding_shares INTEGER,
-                PRIMARY KEY (corp_code, bsns_year, reprt_code),
-                FOREIGN KEY (corp_code, bsns_year, reprt_code) REFERENCES statement_metadata(corp_code, bsns_year, reprt_code)
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS stock_prices (
-                stock_code TEXT,
-                trade_date TEXT,
-                close_price INTEGER,
-                PRIMARY KEY (stock_code, trade_date),
-                FOREIGN KEY (stock_code) REFERENCES company_info(stock_code)
             )
         ''')
         conn.commit()

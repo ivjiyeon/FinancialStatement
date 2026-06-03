@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOG_FILE = os.path.join(PROJECT_ROOT, 'scripts/analyze_and_identify_undervalued.log')
 sys.path.append(str(PROJECT_ROOT))
 
-from dart.util import _get_reporting_period_end_date, determine_recent_report_code_and_year
+
 from scripts.financial_metrics import calculate_per_pbr
 
 class FinancialAnalyzer:
@@ -73,7 +73,6 @@ class FinancialAnalyzer:
 
     def load_outstanding_shares(self, bsns_year, reprt_code):
         logging.info(f"Loading outstanding shares for year {bsns_year}, report {reprt_code}...")
-        target_trade_date = _get_reporting_period_end_date(bsns_year, reprt_code)
         with self._get_db_connection() as conn:
             query = """
                 SELECT
@@ -81,9 +80,8 @@ class FinancialAnalyzer:
                     trade_date,
                     outstanding_shares
                 FROM outstanding_shares_data
-                WHERE trade_date = ?
             """
-            shares_df = pd.read_sql_query(query, conn, params=(target_trade_date,), dtype={
+            shares_df = pd.read_sql_query(query, conn, dtype={
                 'corp_code': str,
                 'trade_date': str,
                 'outstanding_shares': 'int64'
@@ -91,8 +89,8 @@ class FinancialAnalyzer:
         logging.info(f"Loaded {len(shares_df)} outstanding shares records.")
         return shares_df
 
-    def load_stock_prices(self, trade_date_str):
-        logging.info(f"Loading stock prices for date {trade_date_str}...")
+    def load_stock_prices(self):
+        logging.info(f"Loading all stock prices...")
         with self._get_db_connection() as conn:
             query = """
                 SELECT
@@ -100,9 +98,8 @@ class FinancialAnalyzer:
                     trade_date,
                     close_price
                 FROM stock_prices_data
-                WHERE trade_date = ?
             """
-            prices_df = pd.read_sql_query(query, conn, params=(trade_date_str,), dtype={
+            prices_df = pd.read_sql_query(query, conn, dtype={
                 'stock_code': str,
                 'trade_date': str,
                 'close_price': 'int64'
@@ -110,7 +107,18 @@ class FinancialAnalyzer:
         logging.info(f"Loaded {len(prices_df)} stock price records.")
         return prices_df
 
-    def calculate_financial_ratios(self, financial_df, company_info_df):
+    def load_krx_sector_data(self):
+        logging.info("Loading KRX sector data...")
+        krx_sector_path = PROJECT_ROOT / 'data' / 'krx_sector_data.csv'
+        if not krx_sector_path.exists():
+            logging.error(f"KRX sector data not found at {krx_sector_path}")
+            return pd.DataFrame()
+        krx_sector_df = pd.read_csv(krx_sector_path, dtype={'Stock Code': str})
+        krx_sector_df = krx_sector_df.rename(columns={'Stock Code': 'stock_code', 'Sector Classification': 'Sector'})
+        logging.info(f"Loaded {len(krx_sector_df)} KRX sector records.")
+        return krx_sector_df
+
+    def calculate_financial_ratios(self, financial_df, company_info_df, krx_sector_df=None):
         logging.info("Calculating financial ratios...")
         if financial_df.empty:
             logging.warning("Financial DataFrame is empty, cannot calculate ratios.")
@@ -160,16 +168,20 @@ class FinancialAnalyzer:
         merged_df = pd.merge(merged_df, shares_df[['corp_code', 'outstanding_shares']], on='corp_code', how='left')
         merged_df['outstanding_shares'] = merged_df['outstanding_shares'].fillna(pd.NA) # Fill NaN with pd.NA
 
-        # Load stock prices and merge, using the same reporting period end date for consistency
-        target_stock_price_date = _get_reporting_period_end_date(merged_df['bsns_year'].iloc[0], merged_df['reprt_code'].iloc[0])
-        prices_df = self.load_stock_prices(target_stock_price_date)
+        # Load stock prices and merge
+        prices_df = self.load_stock_prices()
         merged_df = pd.merge(merged_df, prices_df[['stock_code', 'close_price']], on='stock_code', how='left')
         merged_df['close_price'] = merged_df['close_price'].fillna(pd.NA) # Fill NaN with pd.NA
 
+        # Merge with KRX sector data
+        if krx_sector_df is not None and not krx_sector_df.empty:
+            merged_df = pd.merge(merged_df, krx_sector_df[['stock_code', 'Sector']], on='stock_code', how='left')
+            merged_df['Sector'] = merged_df['Sector'].fillna('Unknown')
+
         # Initialize ratio columns with 0.0 or None
         ratio_cols = ['Total_Assets', 'Total_Equity', 'Total_Liabilities', 'Current_Assets', 'Current_Liabilities', 
-                      'Net_Income', 'Operating_Cash_Flow', 'D_E_Ratio', 'Current_Ratio', 'ROE', 'ROA',
-                      'EPS', 'BPS', 'PER', 'PBR']
+                    'Net_Income', 'Operating_Cash_Flow', 'D_E_Ratio', 'Current_Ratio', 'ROE', 'ROA',
+                    'EPS', 'BPS', 'PER', 'PBR']
         for col in ratio_cols:
             if col not in merged_df.columns:
                 merged_df[col] = pd.NA # Initialize with pd.NA instead of 0.0
@@ -372,15 +384,16 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
     parser.add_argument('--stage', type=str, choices=['1_2', '3', 'all'], default='all',
                         help="Specify the analysis stage to run: '1_2' for initial filtering, '3' for valuation metrics, or 'all' for sequential execution.")
+    parser.add_argument('--bsns_year', type=int, required=True, help="Business year for financial statement analysis.")
+    parser.add_argument('--reprt_code', type=str, required=True, help="Report code for financial statement analysis (e.g., '11013' for Q1).")
     args = parser.parse_args()
 
     PROJECT_ROOT_DIR = Path('/home/ivjiyeonb/projects/financial_statement/')
     DB_PATH = PROJECT_ROOT_DIR / 'data' / 'financial_data.db'
 
-    # --- Configuration for data fetching ---
-    current_date = datetime.now()
-    TARGET_BSNS_YEAR, TARGET_REPRT_CODE, display_quarter = determine_recent_report_code_and_year(current_date)
-    
+    bsns_year = args.bsns_year
+    reprt_code = args.reprt_code
+
     # Report codes constants (kept for context, but values determined dynamically)
     Q1_REPRT_CODE = '11014'
     Q2_REPRT_CODE = '11012'
@@ -395,21 +408,25 @@ def main():
         if args.stage == '1_2' or args.stage == 'all':
             logging.info("--- Running Stage 1 & 2: Financial Health and Profitability Check ---")
             company_info_df = analyzer.load_company_info()
-            financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+            financial_df = analyzer.load_financial_statements(bsns_year, reprt_code)
 
             if 'thstrm_amount' not in financial_df.columns:
                 logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
                 return "" # Return empty string on error
 
-            analysis_df_all_ratios = analyzer.calculate_financial_ratios(financial_df, company_info_df)
+            krx_sector_df = analyzer.load_krx_sector_data()
+            if krx_sector_df.empty:
+                logging.warning("KRX sector data not loaded, proceeding without sector information.")
+
+            analysis_df_all_ratios = analyzer.calculate_financial_ratios(financial_df, company_info_df, krx_sector_df)
 
             stage2_filtered_companies = analyzer._apply_stage1_and_2_filters(analysis_df_all_ratios)
 
             if not stage2_filtered_companies.empty:
                 analyzer.save_filtered_companies(
                     stage2_filtered_companies['corp_code'].tolist(),
-                    TARGET_BSNS_YEAR,
-                    TARGET_REPRT_CODE,
+                    bsns_year,
+                    reprt_code,
                     append=False
                 )
                 logging.info(f"Stage 1 & 2 completed. {len(stage2_filtered_companies)} companies passed and saved to 'filtered_companies' table.")
@@ -419,18 +436,22 @@ def main():
             if args.stage == '1_2':
                 return "" # Return empty string if only stage 1_2 is run and no report is needed here
 
+        krx_sector_df = analyzer.load_krx_sector_data()
+        if krx_sector_df.empty:
+            logging.warning("KRX sector data not loaded, proceeding without sector information.")
+        
         if args.stage == '3' or args.stage == 'all':
             logging.info("--- Running Stage 3: Valuation Metrics Check ---")
-            companies_for_stage3_df = analyzer._load_filtered_companies_for_stage3(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+            companies_for_stage3_df = analyzer._load_filtered_companies_for_stage3(bsns_year, reprt_code)
 
             if companies_for_stage3_df.empty:
                 logging.info("No companies found in 'filtered_companies' table to apply Stage 3. Make sure Stage 1 & 2 was run first.")
                 # Even if no companies are loaded from filtered_companies, we might still want the default message
-                # This case is handled by the final check for report_output. 
+                # This case is handled by the final check for report_output.
                 # So, we don't return here immediately, but let the empty report_output be handled below.
                 pass # Continue to allow handling of empty report_output
             else:
-                all_financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+                all_financial_df = analyzer.load_financial_statements(bsns_year, reprt_code)
                 company_info_df = analyzer.load_company_info()
 
                 filtered_corp_codes = companies_for_stage3_df['corp_code'].unique()
@@ -440,11 +461,16 @@ def main():
                     logging.warning("No financial data found for companies loaded for Stage 3.")
                     pass # Continue to allow handling of empty report_output
                 else:
-                    analysis_df_stage3 = analyzer.calculate_financial_ratios(financial_df_stage3, company_info_df)
+                    analysis_df_stage3 = analyzer.calculate_financial_ratios(financial_df_stage3, company_info_df, krx_sector_df)
 
                     # Capture Healthy Companies output
                     report_output.append("Healthy Companies:")
-                    report_output.append(analysis_df_stage3[['corp_name', 'stock_code', 'PER', 'PBR', 'EPS', 'BPS']].to_string())
+                    healthy_companies_cols = ['corp_name', 'stock_code', 'Sector', 'PER', 'PBR', 'EPS', 'BPS']
+                    display_df_healthy = analysis_df_stage3[healthy_companies_cols].copy()
+                    for col in ['PER', 'PBR', 'EPS', 'BPS']:
+                        display_df_healthy[col] = pd.to_numeric(display_df_healthy[col], errors='coerce')
+                        display_df_healthy[col] = display_df_healthy[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
+                    report_output.append(display_df_healthy.to_string(index=False))
                     report_output.append("") # Add a blank line for readability
 
                     stage3_final_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
@@ -452,28 +478,32 @@ def main():
                     if not stage3_final_companies_df.empty:
                         analyzer.save_filtered_companies(
                             stage3_final_companies_df['corp_code'].tolist(),
-                            TARGET_BSNS_YEAR,
-                            TARGET_REPRT_CODE,
+                            bsns_year,
+                            reprt_code,
                             append=False
                         )
                         # Capture Undervalued Companies output
                         report_output.append("Undervalued Companies:")
-                        display_df = stage3_final_companies_df[['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']].copy()
-                        for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR']:
-                            display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
-                            display_df[col] = display_df[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-                        report_output.append(display_df.to_string())
+                        undervalued_companies_cols = ['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']
+                        display_df_undervalued = stage3_final_companies_df[undervalued_companies_cols].copy()
+                        for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']:
+                            display_df_undervalued[col] = pd.to_numeric(display_df_undervalued[col], errors='coerce')
+                            display_df_undervalued[col] = display_df_undervalued[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
+                        report_output.append(display_df_undervalued.to_string(index=False))
                         
                         logging.info(f"\nStage 3 completed. {len(stage3_final_companies_df)} companies passed all stages and saved to 'filtered_companies' table.")
                     else:
                         logging.info("No undervalued companies found based on Stage 3 criteria.")
 
+        if report_output:
+            print("\n".join(report_output))
+
     except FileNotFoundError as e:
         logging.error(e)
-        return "" # Return empty string on error
+        print(f"Error: {e}") # Also print to stdout for visibility
     except Exception as e:
-        logging.error(f"An error occurred during analysis: {e}")
-        return "" # Return empty string on error
+        logging.error(f"An unexpected error occurred: {e}")
+        print(f"An unexpected error occurred: {e}") # Also print to stdout for visibility
     
     # If no companies were found for reporting, generate the default message
     if not report_output:

@@ -34,13 +34,31 @@ fi
 # Set PYTHONPATH to include the project root for module imports
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
 
-# 1. Fetch KRX sector data
+    # Determine current business year and report code
+    echo "Determining current business year and report code from dart.util..."
+    EVAL_PYTHON_OUTPUT=$("${VENV_DART}/bin/python3" -c "from datetime import datetime; from dart.util import determine_recent_report_code_and_year; bsns_year, reprt_code, _ = determine_recent_report_code_and_year(datetime.now()); print(f\"BSNS_YEAR={bsns_year}\"); print(f\"REPRT_CODE={reprt_code}\")")
+    
+    BSNS_YEAR=$(echo "${EVAL_PYTHON_OUTPUT}" | grep "BSNS_YEAR" | cut -d= -f2)
+    REPRT_CODE=$(echo "${EVAL_PYTHON_OUTPUT}" | grep "REPRT_CODE" | cut -d= -f2)
+    
+    if [ -z "${BSNS_YEAR}" ] || [ -z "${REPRT_CODE}" ]; then
+        echo "Error: Could not determine BSNS_YEAR or REPRT_CODE. Exiting." >> "${LOG_FILE}"
+        exit 1
+    fi
+
+    echo "Determined BSNS_YEAR=${BSNS_YEAR}, REPRT_CODE=${REPRT_CODE}" >> "${LOG_FILE}"
+
+    # Export for fetch_financial_data_for_filtered_companies.py
+    export TARGET_BSNS_YEAR="${BSNS_YEAR}"
+    export TARGET_REPRT_CODE="${REPRT_CODE}"
+
+    # 1. Fetch KRX sector data
 echo "Running krx_sector/get_krx_sector_data_final.py..."
 "${VENV_KRX}/bin/python3" "${PROJECT_ROOT}/krx_sector/get_krx_sector_data_final.py"
 
 # 2. Fetch DART financial statements
 echo "Running dart/get_financial_statements.py..."
-"${VENV_DART}/bin/python3" "${PROJECT_ROOT}/dart/get_financial_statements.py"
+#"${VENV_DART}/bin/python3" "${PROJECT_ROOT}/dart/get_financial_statements.py"
 
 # Clear analysis-related tables before proceeding to filtering
 echo "Running scripts/clear_analysis_tables.py to clear old analysis data..."
@@ -48,14 +66,14 @@ echo "Running scripts/clear_analysis_tables.py to clear old analysis data..."
 
 # 3. Analyze and identify undervalued companies (Stage 1 & 2 Filtering)
 echo "Running scripts/analyze_and_identify_undervalued.py (Stage 1 & 2)..."
-"${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 1_2
+"${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 1_2 --bsns_year "${BSNS_YEAR}" --reprt_code "${REPRT_CODE}"
 
 # 4. Fetch stock prices and outstanding shares for Stage 1&2 filtered companies
 echo "Running scripts/fetch_financial_data_for_filtered_companies.py..."
 "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/fetch_financial_data_for_filtered_companies.py"
 
 # 5. Analyze and identify undervalued companies (Stage 3 Filtering with PER, PBR, ROE)
-PYTHON_ANALYZE_REPORT=$( "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 3 2>> "${ANALYZE_ERROR_LOG}")
+PYTHON_REPORT=$("${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 3 --bsns_year "${BSNS_YEAR}" --reprt_code "${REPRT_CODE}" 2>> "${LOG_FILE}")
 
 if [ $? -ne 0 ]; then
     echo "Error in analyze_and_identify_undervalued.py Stage 3. Check ${ANALYZE_ERROR_LOG} for details."
