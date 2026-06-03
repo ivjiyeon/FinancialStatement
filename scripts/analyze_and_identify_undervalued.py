@@ -7,13 +7,16 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
-from scripts.financial_metrics import calculate_per_pbr
+from financial_metrics import calculate_per_pbr
 
 # Dynamically add the project root to sys.path
 # This assumes the script is in a subdirectory like 'scripts/'
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOG_FILE = os.path.join(PROJECT_ROOT, 'scripts/analyze_and_identify_undervalued.log')
+logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.info("DEBUG: Reached point before load_dotenv()")
 load_dotenv()
+logging.info("DEBUG: Reached point after load_dotenv()")
 sys.path.append(str(PROJECT_ROOT))
 
 
@@ -379,25 +382,32 @@ class FinancialAnalyzer:
         logging.info("Filtered companies saved successfully.")
 
 def main():
-    # Configure logging to go to the specified log file
-    logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     
     parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
     parser.add_argument('--stage', type=str, choices=['1_2', '3', 'all'], default='all',
                         help="Specify the analysis stage to run: '1_2' for initial filtering, '3' for valuation metrics, or 'all' for sequential execution.")
+
     args = parser.parse_args()
 
     PROJECT_ROOT_DIR = Path('/home/ivjiyeonb/projects/financial_statement/')
     DB_PATH = PROJECT_ROOT_DIR / 'data' / 'financial_data.db'
 
-    TARGET_BSNS_YEAR = os.getenv('TARGET_BSNS_YEAR')
-    TARGET_REPRT_CODE = os.getenv('TARGET_REPRT_CODE')
+    TARGET_BSNS_YEAR = os.environ.get('TARGET_BSNS_YEAR')
+    logging.info(f"TARGET_BSNS_YEAR: {TARGET_BSNS_YEAR} (from environment variable)")
 
-    report_output = [] # List to store report sections
+    TARGET_REPRT_CODE = os.environ.get('TARGET_REPRT_CODE')
+    logging.info(f"TARGET_REPRT_CODE: {TARGET_REPRT_CODE} (from environment variable)")
+
+    logging.info(f"Full os.environ: {os.environ} (for debugging purposes)")
+
+    analyzer = FinancialAnalyzer(DB_PATH)
+
+    # Initialize variables to hold results from processing, to be used in report generation
+    processed_stage2_companies_df = pd.DataFrame()
+    processed_stage3_companies_df = pd.DataFrame()
 
     try:
-        analyzer = FinancialAnalyzer(DB_PATH)
-
+        # --- Stage 1 & 2: Financial Health and Profitability Check ---
         if args.stage == '1_2' or args.stage == 'all':
             logging.info("--- Running Stage 1 & 2: Financial Health and Profitability Check ---")
             company_info_df = analyzer.load_company_info()
@@ -405,104 +415,107 @@ def main():
 
             if 'thstrm_amount' not in financial_df.columns:
                 logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
-                return "" # Return empty string on error
-
-            krx_sector_df = analyzer.load_krx_sector_data()
-            if krx_sector_df.empty:
-                logging.warning("KRX sector data not loaded, proceeding without sector information.")
-
-            analysis_df_all_ratios = analyzer.calculate_financial_ratios(financial_df, company_info_df, krx_sector_df)
-
-            stage2_filtered_companies = analyzer._apply_stage1_and_2_filters(analysis_df_all_ratios)
-
-            if not stage2_filtered_companies.empty:
-                analyzer.save_filtered_companies(
-                    stage2_filtered_companies['corp_code'].tolist(),
-                    TARGET_BSNS_YEAR,
-                    TARGET_REPRT_CODE,
-                    append=False
-                )
-                logging.info(f"Stage 1 & 2 completed. {len(stage2_filtered_companies)} companies passed and saved to 'filtered_companies' table.")
             else:
-                logging.info("No companies passed Stage 1 & 2. 'filtered_companies' table might be empty.")
-            
-            if args.stage == '1_2':
-                return "" # Return empty string if only stage 1_2 is run and no report is needed here
+                krx_sector_df = analyzer.load_krx_sector_data()
+                if krx_sector_df.empty:
+                    logging.warning("KRX sector data not loaded, proceeding without sector information.")
 
-        krx_sector_df = analyzer.load_krx_sector_data()
-        if krx_sector_df.empty:
-            logging.warning("KRX sector data not loaded, proceeding without sector information.")
-        
+                analysis_df_all_ratios = analyzer.calculate_financial_ratios(financial_df, company_info_df, krx_sector_df)
+                processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df_all_ratios)
+
+                if not processed_stage2_companies_df.empty:
+                    analyzer.save_filtered_companies(
+                        processed_stage2_companies_df['corp_code'].tolist(),
+                        TARGET_BSNS_YEAR,
+                        TARGET_REPRT_CODE,
+                        append=False
+                    )
+                    logging.info(f"Stage 1 & 2 completed. {len(processed_stage2_companies_df)} companies passed and saved to 'filtered_companies' table.")
+                else:
+                    logging.info("No companies passed Stage 1 & 2. 'filtered_companies' table might be empty.")
+
+        # --- Stage 3: Valuation Metrics Check ---
         if args.stage == '3' or args.stage == 'all':
             logging.info("--- Running Stage 3: Valuation Metrics Check ---")
             companies_for_stage3_df = analyzer._load_filtered_companies_for_stage3(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
 
             if companies_for_stage3_df.empty:
                 logging.info("No companies found in 'filtered_companies' table to apply Stage 3. Make sure Stage 1 & 2 was run first.")
-                # Even if no companies are loaded from filtered_companies, we might still want the default message
-                # This case is handled by the final check for report_output.
-                # So, we don't return here immediately, but let the empty report_output be handled below.
-                pass # Continue to allow handling of empty report_output
             else:
                 all_financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
                 company_info_df = analyzer.load_company_info()
+                krx_sector_df = analyzer.load_krx_sector_data()
 
                 filtered_corp_codes = companies_for_stage3_df['corp_code'].unique()
                 financial_df_stage3 = all_financial_df[all_financial_df['corp_code'].isin(filtered_corp_codes)]
 
                 if financial_df_stage3.empty:
                     logging.warning("No financial data found for companies loaded for Stage 3.")
-                    pass # Continue to allow handling of empty report_output
                 else:
                     analysis_df_stage3 = analyzer.calculate_financial_ratios(financial_df_stage3, company_info_df, krx_sector_df)
-
-                    # Capture Healthy Companies output
-                    report_output.append("Healthy Companies:")
-                    healthy_companies_cols = ['corp_name', 'stock_code', 'Sector', 'PER', 'PBR', 'EPS', 'BPS']
-                    display_df_healthy = analysis_df_stage3[healthy_companies_cols].copy()
-                    for col in ['PER', 'PBR', 'EPS', 'BPS']:
-                        display_df_healthy[col] = pd.to_numeric(display_df_healthy[col], errors='coerce')
-                        display_df_healthy[col] = display_df_healthy[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-                    report_output.append(display_df_healthy.to_string(index=False))
-                    report_output.append("") # Add a blank line for readability
-
-                    stage3_final_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
-
-                    if not stage3_final_companies_df.empty:
+                    processed_stage3_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
+                    
+                    if not processed_stage3_companies_df.empty:
                         analyzer.save_filtered_companies(
-                            stage3_final_companies_df['corp_code'].tolist(),
+                            processed_stage3_companies_df['corp_code'].tolist(),
                             TARGET_BSNS_YEAR,
                             TARGET_REPRT_CODE,
                             append=False
                         )
-                        # Capture Undervalued Companies output
-                        report_output.append("Undervalued Companies:")
-                        undervalued_companies_cols = ['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']
-                        display_df_undervalued = stage3_final_companies_df[undervalued_companies_cols].copy()
-                        for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']:
-                            display_df_undervalued[col] = pd.to_numeric(display_df_undervalued[col], errors='coerce')
-                            display_df_undervalued[col] = display_df_undervalued[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-                        report_output.append(display_df_undervalued.to_string(index=False))
-                        
-                        logging.info(f"\nStage 3 completed. {len(stage3_final_companies_df)} companies passed all stages and saved to 'filtered_companies' table.")
+                        logging.info(f"Stage 3 completed. {len(processed_stage3_companies_df)} companies passed all stages and saved to 'filtered_companies' table.")
                     else:
                         logging.info("No undervalued companies found based on Stage 3 criteria.")
 
-        if report_output:
-            print("\n".join(report_output))
+        # --- Final Report Assembly ---
+        final_report_lines = []
+
+        if args.stage == '1_2' or args.stage == 'all':
+            if not processed_stage2_companies_df.empty:
+                final_report_lines.append("Healthy Companies:")
+                healthy_companies_cols = ['corp_name', 'stock_code', 'Sector', 'PER', 'PBR', 'EPS', 'BPS']
+                display_df_healthy = processed_stage2_companies_df[[col for col in healthy_companies_cols if col in processed_stage2_companies_df.columns]].copy()
+                for col in ['PER', 'PBR', 'EPS', 'BPS']:
+                    if col in display_df_healthy.columns:
+                        display_df_healthy[col] = pd.to_numeric(display_df_healthy[col], errors='coerce')
+                        display_df_healthy[col] = display_df_healthy[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
+                final_report_lines.append(display_df_healthy.to_string(index=False))
+                final_report_lines.append("") # Add a blank line for readability
+            elif args.stage == '1_2': # Only for stage 1_2, and no companies found.
+                logging.debug("No healthy companies found for Stage 1 & 2 report.")
+        
+        if args.stage == '3' or args.stage == 'all':
+            if not processed_stage3_companies_df.empty:
+                if final_report_lines: # Add a separator if Healthy Companies section already exists
+                    final_report_lines.append("") # Ensure a blank line between sections
+                final_report_lines.append("Undervalued Companies:")
+                undervalued_companies_cols = ['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']
+                display_df_undervalued = processed_stage3_companies_df[[col for col in undervalued_companies_cols if col in processed_stage3_companies_df.columns]].copy()
+                for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']:
+                    if col in display_df_undervalued.columns:
+                        display_df_undervalued[col] = pd.to_numeric(display_df_undervalued[col], errors='coerce')
+                        display_df_undervalued[col] = display_df_undervalued[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
+                final_report_lines.append(display_df_undervalued.to_string(index=False))
+            elif args.stage == '3' and not final_report_lines: # Only for stage 3, and no companies found, and no previous report lines.
+                logging.debug("No undervalued companies found for Stage 3 report.")
+
+
+        # If no companies were found in any relevant stage for the requested report type, or if no stages were specified for reporting
+        if not final_report_lines:
+            print(f"No companies detected as healthy nor undervalued for {TARGET_BSNS_YEAR} {TARGET_REPRT_CODE}.")
+        else:
+            logging.debug(f"Final report_output content: {final_report_lines}")
+            print("\n".join(final_report_lines))
 
     except FileNotFoundError as e:
-        logging.error(e)
+        logging.error(f"Error: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}", exc_info=True)
         logging.error(f"Error: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
         logging.error(f"An unexpected error occurred: {e}")
     
-    # If no companies were found for reporting, generate the default message
-    if not report_output:
-        return f"No companies detected as healthy nor undervalued for {TARGET_BSNS_YEAR} {TARGET_REPRT_CODE}."
-    
-    return "\n".join(report_output)
+
 
 if __name__ == "__main__":
-    print(main())
+    main()
