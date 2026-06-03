@@ -156,20 +156,14 @@ def run_dart_data_fetch_script(corp_code: str, stock_code: str, bsns_year: int, 
 
 def main():
     # --- Configuration for data fetching ---
-    TARGET_BSNS_YEAR = os.getenv('TARGET_BSNS_YEAR')
-    TARGET_REPRT_CODE = os.getenv('TARGET_REPRT_CODE')
     current_date = datetime.now()
     
-    # Report codes constants (kept for context, but values determined dynamically)
-    Q1_REPRT_CODE = '11014'
-    Q2_REPRT_CODE = '11012'
-    Q3_REPRT_CODE = '11013'
-    ANNUAL_REPRT_CODE = '11011' # Q4 (Annual)
-
     load_dotenv() # Load .env file
     KRX_ID = os.getenv('KRX_ID')
     KRX_PW = os.getenv('KRX_PW')
     DART_API_KEY = os.getenv('DART_API_KEY') # Load DART API key
+    TARGET_BSNS_YEAR = os.getenv('TARGET_BSNS_YEAR')
+    TARGET_REPRT_CODE = os.getenv('TARGET_REPRT_CODE')
 
     if not KRX_ID or not KRX_PW:
         logging.error("KRX_ID or KRX_PW environment variables are not set. Please set them in the .env file or ensure it's loaded.")
@@ -189,7 +183,6 @@ def main():
         logging.info("No filtered companies found to fetch data for.")
         return
 
-
     logging.info(f"Fetching data for {len(filtered_companies_list)} companies...")
     for company_data in filtered_companies_list:
         corp_code = company_data['corp_code']
@@ -198,7 +191,7 @@ def main():
         reprt_code = company_data['reprt_code']
 
         logging.info(f"Processing {stock_code} (Corp Code: {corp_code})...")
-        start_date_krx = (current_date - timedelta(days=365)).strftime('%Y%m%d')
+        start_date_krx = (current_date - timedelta(days=7)).strftime('%Y%m%d')
         end_date_krx = current_date.strftime('%Y%m%d')
         # Fetch KRX stock prices (OHLCV) - using calculated start and end dates
         run_krx_data_fetch_script(corp_code, stock_code, start_date_krx, end_date_krx, KRX_ID, KRX_PW)

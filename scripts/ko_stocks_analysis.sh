@@ -54,7 +54,7 @@ export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
 
     # 1. Fetch KRX sector data
 echo "Running krx_sector/get_krx_sector_data_final.py..."
-"${VENV_KRX}/bin/python3" "${PROJECT_ROOT}/krx_sector/get_krx_sector_data_final.py"
+#"${VENV_KRX}/bin/python3" "${PROJECT_ROOT}/krx_sector/get_krx_sector_data_final.py"
 
 # 2. Fetch DART financial statements
 echo "Running dart/get_financial_statements.py..."
@@ -66,14 +66,14 @@ echo "Running scripts/clear_analysis_tables.py to clear old analysis data..."
 
 # 3. Analyze and identify undervalued companies (Stage 1 & 2 Filtering)
 echo "Running scripts/analyze_and_identify_undervalued.py (Stage 1 & 2)..."
-"${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 1_2 --bsns_year "${BSNS_YEAR}" --reprt_code "${REPRT_CODE}"
+"${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 1_2
 
 # 4. Fetch stock prices and outstanding shares for Stage 1&2 filtered companies
 echo "Running scripts/fetch_financial_data_for_filtered_companies.py..."
 "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/fetch_financial_data_for_filtered_companies.py"
 
 # 5. Analyze and identify undervalued companies (Stage 3 Filtering with PER, PBR, ROE)
-PYTHON_REPORT=$("${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 3 --bsns_year "${BSNS_YEAR}" --reprt_code "${REPRT_CODE}" 2>> "${LOG_FILE}")
+PYTHON_REPORT=$("${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 3 2>> "${LOG_FILE}")
 
 if [ $? -ne 0 ]; then
     echo "Error in analyze_and_identify_undervalued.py Stage 3. Check ${ANALYZE_ERROR_LOG} for details."

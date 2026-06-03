@@ -6,15 +6,16 @@ import logging
 import argparse
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
+from scripts.financial_metrics import calculate_per_pbr
 
 # Dynamically add the project root to sys.path
 # This assumes the script is in a subdirectory like 'scripts/'
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOG_FILE = os.path.join(PROJECT_ROOT, 'scripts/analyze_and_identify_undervalued.log')
+load_dotenv()
 sys.path.append(str(PROJECT_ROOT))
 
-
-from scripts.financial_metrics import calculate_per_pbr
 
 class FinancialAnalyzer:
     def __init__(self, db_path):
@@ -384,21 +385,13 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
     parser.add_argument('--stage', type=str, choices=['1_2', '3', 'all'], default='all',
                         help="Specify the analysis stage to run: '1_2' for initial filtering, '3' for valuation metrics, or 'all' for sequential execution.")
-    parser.add_argument('--bsns_year', type=int, required=True, help="Business year for financial statement analysis.")
-    parser.add_argument('--reprt_code', type=str, required=True, help="Report code for financial statement analysis (e.g., '11013' for Q1).")
     args = parser.parse_args()
 
     PROJECT_ROOT_DIR = Path('/home/ivjiyeonb/projects/financial_statement/')
     DB_PATH = PROJECT_ROOT_DIR / 'data' / 'financial_data.db'
 
-    bsns_year = args.bsns_year
-    reprt_code = args.reprt_code
-
-    # Report codes constants (kept for context, but values determined dynamically)
-    Q1_REPRT_CODE = '11014'
-    Q2_REPRT_CODE = '11012'
-    Q3_REPRT_CODE = '11013'
-    ANNUAL_REPRT_CODE = '11011' # Q4 (Annual)
+    TARGET_BSNS_YEAR = os.getenv('TARGET_BSNS_YEAR')
+    TARGET_REPRT_CODE = os.getenv('TARGET_REPRT_CODE')
 
     report_output = [] # List to store report sections
 
@@ -408,7 +401,7 @@ def main():
         if args.stage == '1_2' or args.stage == 'all':
             logging.info("--- Running Stage 1 & 2: Financial Health and Profitability Check ---")
             company_info_df = analyzer.load_company_info()
-            financial_df = analyzer.load_financial_statements(bsns_year, reprt_code)
+            financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
 
             if 'thstrm_amount' not in financial_df.columns:
                 logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
@@ -425,8 +418,8 @@ def main():
             if not stage2_filtered_companies.empty:
                 analyzer.save_filtered_companies(
                     stage2_filtered_companies['corp_code'].tolist(),
-                    bsns_year,
-                    reprt_code,
+                    TARGET_BSNS_YEAR,
+                    TARGET_REPRT_CODE,
                     append=False
                 )
                 logging.info(f"Stage 1 & 2 completed. {len(stage2_filtered_companies)} companies passed and saved to 'filtered_companies' table.")
@@ -442,7 +435,7 @@ def main():
         
         if args.stage == '3' or args.stage == 'all':
             logging.info("--- Running Stage 3: Valuation Metrics Check ---")
-            companies_for_stage3_df = analyzer._load_filtered_companies_for_stage3(bsns_year, reprt_code)
+            companies_for_stage3_df = analyzer._load_filtered_companies_for_stage3(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
 
             if companies_for_stage3_df.empty:
                 logging.info("No companies found in 'filtered_companies' table to apply Stage 3. Make sure Stage 1 & 2 was run first.")
@@ -451,7 +444,7 @@ def main():
                 # So, we don't return here immediately, but let the empty report_output be handled below.
                 pass # Continue to allow handling of empty report_output
             else:
-                all_financial_df = analyzer.load_financial_statements(bsns_year, reprt_code)
+                all_financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
                 company_info_df = analyzer.load_company_info()
 
                 filtered_corp_codes = companies_for_stage3_df['corp_code'].unique()
@@ -478,8 +471,8 @@ def main():
                     if not stage3_final_companies_df.empty:
                         analyzer.save_filtered_companies(
                             stage3_final_companies_df['corp_code'].tolist(),
-                            bsns_year,
-                            reprt_code,
+                            TARGET_BSNS_YEAR,
+                            TARGET_REPRT_CODE,
                             append=False
                         )
                         # Capture Undervalued Companies output
