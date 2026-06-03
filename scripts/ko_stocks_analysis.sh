@@ -9,11 +9,17 @@ VENV_DART="${PROJECT_ROOT}/venv_dart"
 VENV_KRX="${PROJECT_ROOT}/venv_krx"
 LOG_FILE="${PROJECT_ROOT}/scripts/run_all_process.log"
 
-# Clear the log file at the start of each run
+# Clear the main log file at the start of each run
 > "${LOG_FILE}"
 
-# Redirect all subsequent output to the log file
+# Redirect stdout of this script to tee, and stderr of this script to tee, then both to LOG_FILE
+# This ensures both stdout and stderr of the shell script itself are logged.
+# Python script's internal logging.basicConfig will handle its own file.
 exec > >(tee -a "${LOG_FILE}") 2>&1
+
+# Specific error log for analyze_and_identify_undervalued.py for direct debugging
+ANALYZE_ERROR_LOG="${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued_error.log"
+> "${ANALYZE_ERROR_LOG}" # Clear specific error log
 
 echo "Starting all financial analysis processes at $(date)..."
 
@@ -49,7 +55,14 @@ echo "Running scripts/fetch_financial_data_for_filtered_companies.py..."
 "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/fetch_financial_data_for_filtered_companies.py"
 
 # 5. Analyze and identify undervalued companies (Stage 3 Filtering with PER, PBR, ROE)
-echo "Running scripts/analyze_and_identify_undervalued.py (Stage 3)..."
-"${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 3
+PYTHON_ANALYZE_REPORT=$( "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 3 2>> "${ANALYZE_ERROR_LOG}")
+
+if [ $? -ne 0 ]; then
+    echo "Error in analyze_and_identify_undervalued.py Stage 3. Check ${ANALYZE_ERROR_LOG} for details."
+    cat "${ANALYZE_ERROR_LOG}"
+    exit 1
+else
+    echo "${PYTHON_ANALYZE_REPORT}"
+fi
 
 echo "All financial analysis processes completed successfully at $(date)."
