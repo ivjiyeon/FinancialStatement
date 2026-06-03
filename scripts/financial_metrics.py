@@ -20,6 +20,8 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
 
     per = None
     pbr = None
+    eps = None
+    bps = None
 
     try:
         # Fetch latest outstanding_shares
@@ -136,5 +138,5 @@ def calculate_per_pbr(corp_code: str, stock_code: str, bsns_year: str, db_path: 
     finally:
         conn.close()
 
-    return per, pbr
+    return per, pbr, eps, bps
 

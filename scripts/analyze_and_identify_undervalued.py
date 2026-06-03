@@ -216,17 +216,23 @@ class FinancialAnalyzer:
         logging.info("Calculating PER and PBR using financial_metrics module...")
         per_list = []
         pbr_list = []
+        eps_list = []
+        bps_list = []
         for index, row in merged_df.iterrows():
             corp_code = row['corp_code']
             stock_code = row['stock_code']
             bsns_year = str(row['bsns_year']) # Ensure bsns_year is string
             
-            per, pbr = calculate_per_pbr(corp_code, stock_code, bsns_year, self.db_path)
+            per, pbr, eps, bps = calculate_per_pbr(corp_code, stock_code, bsns_year, self.db_path)
             per_list.append(per)
             pbr_list.append(pbr)
+            eps_list.append(eps)
+            bps_list.append(bps)
         
         merged_df['PER'] = pd.Series(per_list, dtype=float)
         merged_df['PBR'] = pd.Series(pbr_list, dtype=float)
+        merged_df['EPS'] = pd.Series(eps_list, dtype=float)
+        merged_df['BPS'] = pd.Series(bps_list, dtype=float)
         
         logging.info("Financial ratios calculated.")
         return merged_df
@@ -438,7 +444,7 @@ def main():
 
                     # Capture Healthy Companies output
                     report_output.append("Healthy Companies:")
-                    report_output.append(analysis_df_stage3[['corp_name', 'stock_code', 'PER', 'PBR']].to_string())
+                    report_output.append(analysis_df_stage3[['corp_name', 'stock_code', 'PER', 'PBR', 'EPS', 'BPS']].to_string())
                     report_output.append("") # Add a blank line for readability
 
                     stage3_final_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
