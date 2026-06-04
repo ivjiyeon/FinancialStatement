@@ -68,9 +68,7 @@ export TARGET_REPRT_CODE="${REPRT_CODE}"
     echo "Running scripts/analyze_and_identify_undervalued.py (Stage 1 & 2)..."
     "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 1_2
 
-    # 4. Fetch stock prices and outstanding shares for Stage 1&2 filtered companies
-    echo "Running scripts/fetch_financial_data_for_filtered_companies.py..."
-    "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/fetch_financial_data_for_filtered_companies.py"
+
 
     echo "All financial analysis processes completed successfully at $(date)..."
 

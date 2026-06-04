@@ -26,7 +26,7 @@ def clean_amount(amount_str):
     return int(clean_str) if clean_str and clean_str != '-' else 0
 
 def fetch_and_store_dart_outstanding_shares(db_path: Path, corp_code: str, stock_code: str, bsns_year: int, reprt_code: str, dart_api_key: str):
-    #logging.info(f"Fetching outstanding shares for {corp_code} (stock_code: {stock_code}, bsns_year: {bsns_year}, reprt_code: {reprt_code})...")
+    logging.info(f"Attempting to fetch outstanding shares for {corp_code} (stock_code: {stock_code}, bsns_year: {bsns_year}, reprt_code: {reprt_code}) from DART API...")
     
     url = DART_API_OUTSTANDING_SHARES_URL
     params = {
@@ -40,6 +40,7 @@ def fetch_and_store_dart_outstanding_shares(db_path: Path, corp_code: str, stock
         response = requests.get(url, params=params)
         response.raise_for_status() # Raise an exception for HTTP errors
         data = response.json()
+        logging.debug(f"DART API response for {corp_code}: {data}")
 
         if data.get('status') != '000':
             logging.warning(f"DART API error for {corp_code} ({bsns_year}-{reprt_code}) (stockTotqySttus.json): {data.get('message', 'Unknown error')}. Skipping.")
@@ -76,16 +77,16 @@ def fetch_and_store_dart_outstanding_shares(db_path: Path, corp_code: str, stock
                         outstanding_shares = excluded.outstanding_shares
                 ''', (corp_code, stock_code, trade_date, common_outstanding_shares))
                 conn.commit()
-            logging.info(f"Successfully stored DART outstanding shares for {corp_code} (stock_code: {stock_code}, shares: {common_outstanding_shares})")
+            logging.info(f"Successfully stored DART outstanding shares for {corp_code} (stock_code: {stock_code}, trade_date: {trade_date}, shares: {common_outstanding_shares}).")
         else:
-            logging.warning(f"No valid common outstanding shares found or calculated for {corp_code} from stockTotqySttus.json. Skipping storage.")
+            logging.warning(f"No valid common outstanding shares found or calculated for {corp_code} (stock_code: {stock_code}, bsns_year: {bsns_year}, reprt_code: {reprt_code}) from stockTotqySttus.json. Skipping storage.")
 
     except requests.exceptions.RequestException as e:
-        logging.error(f"HTTP Request error fetching DART data for {corp_code}: {e}")
+        logging.error(f"HTTP Request error fetching DART data for {corp_code} (stock_code: {stock_code}, bsns_year: {bsns_year}, reprt_code: {reprt_code}): {e}")
     except json.JSONDecodeError:
-        logging.error(f"JSON Decode error for DART data for {corp_code}: Invalid response.")
+        logging.error(f"JSON Decode error for DART data for {corp_code} (stock_code: {stock_code}, bsns_year: {bsns_year}, reprt_code: {reprt_code}): Invalid response.")
     except Exception as e:
-        logging.error(f"An unexpected error occurred during DART data fetch for {corp_code}: {e}")
+        logging.error(f"An unexpected error occurred during DART data fetch for {corp_code} (stock_code: {stock_code}, bsns_year: {bsns_year}, reprt_code: {reprt_code}): {e}")
 
 def main():
     parser = argparse.ArgumentParser(description='Fetch DART outstanding shares data and store in DB.')

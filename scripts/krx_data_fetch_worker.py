@@ -14,9 +14,10 @@ def _get_db_connection(db_path: Path):
     return sqlite3.connect(str(db_path))
 
 def fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path: Path, stock_code: str, start_date: str, end_date: str):
-    #logging.info(f"Fetching last day's OHLCV data for stock_prices_data for {stock_code} from {start_date} to {end_date}...")
+    logging.info(f"Attempting to fetch OHLCV data for stock {stock_code} from {start_date} to {end_date}...")
     try:
         df = stock.get_market_ohlcv_by_date(start_date, end_date, stock_code)
+        logging.info(f"Successfully retrieved OHLCV data for {stock_code} ({len(df)} records).")
 
         if df.empty:
             logging.warning(f"No OHLCV data found for {stock_code} from {start_date} to {end_date}. Skipping storage in stock_prices_data.")
@@ -55,9 +56,9 @@ def fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path: Path, stock_co
                     volume = excluded.volume
             ''', (stock_code, trade_date, open_price, high_price, low_price, close_price, volume))
             conn.commit()
-        logging.info(f"Successfully stored last day's OHLCV data for {stock_code} in stock_prices_data.")
+        logging.info(f"Successfully stored OHLCV data for {stock_code} (close_price: {close_price}) on {trade_date}.")
     except Exception as e:
-        logging.error(f"Error fetching/storing last day's OHLCV data for {stock_code} in stock_prices_data: {e}")
+        logging.error(f"Failed to fetch or store OHLCV data for {stock_code} from {start_date} to {end_date}: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description='Fetch KRX stock data and store in DB.')

@@ -4,25 +4,30 @@ import sqlite3
 import pandas as pd
 import logging
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
-from financial_metrics import calculate_per_pbr
+import subprocess
+import requests
+from pykrx import stock
+from dotenv import load_dotenv
+
 
 # Dynamically add the project root to sys.path
 # This assumes the script is in a subdirectory like 'scripts/'
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOG_FILE = os.path.join(PROJECT_ROOT, 'scripts/analyze_and_identify_undervalued.log')
 logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-logging.info("DEBUG: Reached point before load_dotenv()")
-load_dotenv()
-logging.info("DEBUG: Reached point after load_dotenv()")
+load_dotenv(dotenv_path=PROJECT_ROOT / '.env')
 sys.path.append(str(PROJECT_ROOT))
 
 
 class FinancialAnalyzer:
     def __init__(self, db_path):
         self.db_path = db_path
+        #self.project_root = Path(__file__).resolve().parents[1]
+        #self.venv_krx_python = self.project_root / 'venv_krx' / 'bin' / 'python'
+        #self.venv_dart_python = self.project_root / 'venv_dart' / 'bin' / 'python'
         if not os.path.exists(self.db_path):
             logging.error(f"Database not found at {self.db_path}")
             raise FileNotFoundError(f"Database not found at {self.db_path}")
@@ -54,7 +59,8 @@ class FinancialAnalyzer:
                     sm.fs_div,
                     fsi.account_nm,
                     fsi.account_id,
-                    fsi.thstrm_amount
+                    fsi.thstrm_amount,
+                    fsi.thstrm_add_amount
                 FROM financial_statement_items AS fsi
                 JOIN statement_metadata AS sm
                 ON fsi.corp_code = sm.corp_code
@@ -70,13 +76,14 @@ class FinancialAnalyzer:
                 'sj_div': 'category',
                 'fs_div': 'category',
                 'account_nm': str,
-                'thstrm_amount': 'float32'
+                'thstrm_amount': 'float32',
+                'thstrm_add_amount': 'float32'
             })
         logging.info(f"Loaded {len(financial_df)} financial statement records.")
         return financial_df
 
-    def load_outstanding_shares(self, bsns_year, reprt_code):
-        logging.info(f"Loading outstanding shares for year {bsns_year}, report {reprt_code}...")
+    def load_outstanding_shares(self):
+        logging.info("Loading all outstanding shares...")
         with self._get_db_connection() as conn:
             query = """
                 SELECT
@@ -122,7 +129,7 @@ class FinancialAnalyzer:
         logging.info(f"Loaded {len(krx_sector_df)} KRX sector records.")
         return krx_sector_df
 
-    def calculate_financial_ratios(self, financial_df, company_info_df, krx_sector_df=None):
+    def calculate_financial_ratios(self, financial_df, company_info_df, outstanding_shares_df, stock_prices_df, krx_sector_df=None, calculate_valuation_ratios=True):
         logging.info("Calculating financial ratios...")
         if financial_df.empty:
             logging.warning("Financial DataFrame is empty, cannot calculate ratios.")
@@ -167,15 +174,19 @@ class FinancialAnalyzer:
         company_info_df_processed = company_info_df[['corp_code', 'stock_code', 'corp_name']].drop_duplicates(subset=['corp_code'])
         merged_df = pd.merge(merged_df, company_info_df_processed, on='corp_code', how='left')
 
-        # Load outstanding shares and merge
-        shares_df = self.load_outstanding_shares(merged_df['bsns_year'].iloc[0], merged_df['reprt_code'].iloc[0])
-        merged_df = pd.merge(merged_df, shares_df[['corp_code', 'outstanding_shares']], on='corp_code', how='left')
-        merged_df['outstanding_shares'] = merged_df['outstanding_shares'].fillna(pd.NA) # Fill NaN with pd.NA
+        # Merge with outstanding shares
+        logging.info(f"Before merging outstanding_shares_df: merged_df shape {merged_df.shape}, outstanding_shares_df shape {outstanding_shares_df.shape}")
+        merged_df = pd.merge(merged_df, outstanding_shares_df[['corp_code', 'outstanding_shares']], on='corp_code', how='left')
+        logging.info(f"After merging outstanding_shares_df: merged_df shape {merged_df.shape}")
+        logging.info(f"NaNs in 'outstanding_shares' after merge: {merged_df['outstanding_shares'].isnull().sum()}")
+        merged_df['outstanding_shares'] = merged_df['outstanding_shares'].fillna(pd.NA)
 
-        # Load stock prices and merge
-        prices_df = self.load_stock_prices()
-        merged_df = pd.merge(merged_df, prices_df[['stock_code', 'close_price']], on='stock_code', how='left')
-        merged_df['close_price'] = merged_df['close_price'].fillna(pd.NA) # Fill NaN with pd.NA
+        # Merge with stock prices
+        logging.info(f"Before merging stock_prices_df: merged_df shape {merged_df.shape}, stock_prices_df shape {stock_prices_df.shape}")
+        merged_df = pd.merge(merged_df, stock_prices_df[['stock_code', 'close_price']], on='stock_code', how='left')
+        logging.info(f"After merging stock_prices_df: merged_df shape {merged_df.shape}")
+        logging.info(f"NaNs in 'close_price' after merge: {merged_df['close_price'].isnull().sum()}")
+        merged_df['close_price'] = merged_df['close_price'].fillna(pd.NA)
 
         # Merge with KRX sector data
         if krx_sector_df is not None and not krx_sector_df.empty:
@@ -184,11 +195,15 @@ class FinancialAnalyzer:
 
         # Initialize ratio columns with 0.0 or None
         ratio_cols = ['Total_Assets', 'Total_Equity', 'Total_Liabilities', 'Current_Assets', 'Current_Liabilities', 
-                    'Net_Income', 'Operating_Cash_Flow', 'D_E_Ratio', 'Current_Ratio', 'ROE', 'ROA',
-                    'EPS', 'BPS', 'PER', 'PBR']
+                    'Net_Income', 'Operating_Cash_Flow', 'D_E_Ratio', 'Current_Ratio', 'ROE', 'ROA']
+        
+        # Add valuation specific ratio columns only if they are to be calculated
+        if calculate_valuation_ratios:
+            ratio_cols.extend(['EPS', 'BPS', 'PER', 'PBR'])
+            
         for col in ratio_cols:
             if col not in merged_df.columns:
-                merged_df[col] = pd.NA # Initialize with pd.NA instead of 0.0
+                merged_df[col] = pd.NA
 
         # --- Ratio Calculations ---
         # Balance Sheet Items
@@ -206,56 +221,88 @@ class FinancialAnalyzer:
 
         # Debt-to-Equity Ratio
         merged_df['D_E_Ratio'] = merged_df['Total_Liabilities'] / merged_df['Total_Equity']
-        merged_df['D_E_Ratio'] = merged_df['D_E_Ratio'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA) # Handle division by zero or NaN
+        merged_df['D_E_Ratio'] = merged_df['D_E_Ratio'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
 
         # Current Ratio
         merged_df['Current_Ratio'] = merged_df['Current_Assets'] / merged_df['Current_Liabilities']
-        merged_df['Current_Ratio'] = merged_df['Current_Ratio'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA) # Handle division by zero or NaN
+        merged_df['Current_Ratio'] = merged_df['Current_Ratio'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
 
         # ROE (Return on Equity)
         merged_df['ROE'] = merged_df['Net_Income'] / merged_df['Total_Equity']
-        merged_df['ROE'] = merged_df['ROE'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA) # Handle division by zero or NaN
+        merged_df['ROE'] = merged_df['ROE'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
 
         # ROA (Return on Assets)
         merged_df['ROA'] = merged_df['Net_Income'] / merged_df['Total_Assets']
-        merged_df['ROA'] = merged_df['ROA'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA) # Handle division by zero or NaN
+        merged_df['ROA'] = merged_df['ROA'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
 
-        # EPS (Earnings Per Share)
-        merged_df['EPS'] = merged_df['Net_Income'] / merged_df['outstanding_shares']
-        merged_df['EPS'] = merged_df['EPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+        # Valuation Ratios (EPS, BPS, PER, PBR) only if explicitly requested
+        if calculate_valuation_ratios:
+            logging.info("Calculating PER, PBR, EPS, and BPS using vectorized operations...")
+            # Calculate EPS: Net Income / Outstanding Shares * 4 (annualized assuming quarterly data)
+            # Need to ensure Net_Income is properly adjusted for annual reports based on Q3 thstrm_add_amount if applicable
 
-        # BPS (Book Value Per Share)
-        merged_df['BPS'] = merged_df['Total_Equity'] / merged_df['outstanding_shares']
-        merged_df['BPS'] = merged_df['BPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+            # Get thstrm_add_amount for ProfitLoss for current bsns_year and Q3 (11014) report code
+            # This requires access to the full financial_df including thstrm_add_amount, which is now available.
+            q3_add_amounts = financial_df[
+                (financial_df['account_id'] == 'ifrs-full_ProfitLoss') &
+                (financial_df['reprt_code'] == '11014') &
+                (financial_df['sj_div'].isin(['IS', 'CIS']))
+            ][['corp_code', 'bsns_year', 'thstrm_add_amount']].drop_duplicates()
 
-        # Calculate PER and PBR using the new module
-        logging.info("Calculating PER and PBR using financial_metrics module...")
-        per_list = []
-        pbr_list = []
-        eps_list = []
-        bps_list = []
-        for index, row in merged_df.iterrows():
-            corp_code = row['corp_code']
-            stock_code = row['stock_code']
-            bsns_year = str(row['bsns_year']) # Ensure bsns_year is string
-            
-            per, pbr, eps, bps = calculate_per_pbr(corp_code, stock_code, bsns_year, self.db_path)
-            per_list.append(per)
-            pbr_list.append(pbr)
-            eps_list.append(eps)
-            bps_list.append(bps)
-        
-        merged_df['PER'] = pd.Series(per_list, dtype=float)
-        merged_df['PBR'] = pd.Series(pbr_list, dtype=float)
-        merged_df['EPS'] = pd.Series(eps_list, dtype=float)
-        merged_df['BPS'] = pd.Series(bps_list, dtype=float)
+            # Merge Q3 additional amounts to merged_df
+            merged_df = pd.merge(
+                merged_df,
+                q3_add_amounts.rename(columns={'thstrm_add_amount': 'Q3_ProfitLoss_Add_Amount'}),
+                on=['corp_code', 'bsns_year'],
+                how='left'
+            )
+            merged_df['Q3_ProfitLoss_Add_Amount'] = merged_df['Q3_ProfitLoss_Add_Amount'].fillna(0)
+
+            # Adjust Net_Income for annual reports (reprt_code '11011') by subtracting Q3 additional amount
+            annual_report_mask = merged_df['reprt_code'] == '11011'
+            merged_df.loc[annual_report_mask, 'Net_Income_Adjusted'] = \
+                merged_df.loc[annual_report_mask, 'Net_Income'] - merged_df.loc[annual_report_mask, 'Q3_ProfitLoss_Add_Amount']
+            merged_df['Net_Income_Adjusted'] = merged_df['Net_Income_Adjusted'].fillna(merged_df['Net_Income'])
+
+            # Calculate EPS: Net Income / Outstanding Shares * 4 (annualized assuming quarterly data)
+            # Check for valid outstanding_shares before calculating EPS and BPS
+            merged_df['EPS'] = merged_df.apply(lambda row: 
+                row['Net_Income_Adjusted'] / row['outstanding_shares'] * 4 
+                if pd.notna(row['outstanding_shares']) and row['outstanding_shares'] != 0 
+                else pd.NA, axis=1
+            )
+            merged_df['BPS'] = merged_df.apply(lambda row: 
+                row['Total_Equity'] / row['outstanding_shares'] 
+                if pd.notna(row['outstanding_shares']) and row['outstanding_shares'] != 0 
+                else pd.NA, axis=1
+            )
+
+            # Handle division by zero or NaN for EPS and BPS
+            merged_df['EPS'] = merged_df['EPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+            merged_df['BPS'] = merged_df['BPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+
+            # Calculate PER (Price / EPS)
+            merged_df['PER'] = merged_df['close_price'] / merged_df['EPS']
+            merged_df['PER'] = merged_df['PER'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+            # Ensure PER is not negative if EPS is negative
+            merged_df.loc[merged_df['EPS'] < 0, 'PER'] = pd.NA
+
+            # Calculate PBR (Price / BPS)
+            merged_df['PBR'] = merged_df['close_price'] / merged_df['BPS']
+            merged_df['PBR'] = merged_df['PBR'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+            # Ensure PBR is not negative if BPS is negative
+            merged_df.loc[merged_df['BPS'] < 0, 'PBR'] = pd.NA
+
+            # Drop the temporary Net_Income_Adjusted column
+            merged_df = merged_df.drop(columns=['Net_Income_Adjusted'], errors='ignore')
+        else:
+            logging.info("Skipping PER, PBR, EPS, and BPS calculation.")
+            for col in ['EPS', 'BPS', 'PER', 'PBR']:
+                if col not in merged_df.columns:
+                    merged_df[col] = pd.NA
         
         logging.info("Financial ratios calculated.")
         return merged_df
-
-
-
-
 
     def _apply_stage1_and_2_filters(self, analysis_df):
         logging.info("Applying Stage 1 & 2 filters...")
@@ -381,122 +428,352 @@ class FinancialAnalyzer:
             conn.commit()
         logging.info("Filtered companies saved successfully.")
 
-def main():
-    
-    parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
-    parser.add_argument('--stage', type=str, choices=['1_2', '3', 'all'], default='all',
-                        help="Specify the analysis stage to run: '1_2' for initial filtering, '3' for valuation metrics, or 'all' for sequential execution.")
+    def get_filtered_companies(self, bsns_year, reprt_code):
+        logging.info(f"Fetching filtered companies for {bsns_year}-{reprt_code} from database (raw SQL)...")
+        companies = []
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                query = """
+                    SELECT DISTINCT fc.corp_code, ci.stock_code, fc.bsns_year, fc.reprt_code
+                    FROM filtered_companies AS fc
+                    JOIN company_info AS ci ON fc.corp_code = ci.corp_code
+                    WHERE fc.bsns_year = ? AND fc.reprt_code = ?
+                """
+                cursor.execute(query, (bsns_year, reprt_code))
+                rows = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                for row in rows:
+                    companies.append(dict(zip(columns, row)))
+            logging.info(f"Found {len(companies)} filtered companies (raw SQL).")
+        except Exception as e:
+            logging.error(f"Error fetching filtered companies (raw SQL): {e}")
+        return companies
 
-    args = parser.parse_args()
+    def init_new_tables(self):
+        """
+        Initializes the new tables for stock prices and outstanding shares data.
+        """
+        logging.info("Initializing new database tables: stock_prices_data and outstanding_shares_data...")
+        try:
+            with self._get_db_connection() as conn:
+                cursor = conn.cursor()
+                # Drop tables if they exist to ensure a clean start
+                cursor.execute('DROP TABLE IF EXISTS stock_prices_data;')
+                cursor.execute('DROP TABLE IF EXISTS outstanding_shares_data;')
+
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS stock_prices_data (
+                        stock_code TEXT NOT NULL,
+                        trade_date TEXT NOT NULL,
+                        open_price INTEGER,
+                        high_price INTEGER,
+                        low_price INTEGER,
+                        close_price INTEGER,
+                        volume INTEGER,
+                        PRIMARY KEY (stock_code, trade_date)
+                    )
+                ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS outstanding_shares_data (
+                        corp_code TEXT NOT NULL,
+                        stock_code TEXT NOT NULL,
+                        trade_date TEXT NOT NULL,
+                        outstanding_shares INTEGER,
+                        PRIMARY KEY (corp_code, stock_code, trade_date)
+                    )
+                ''')
+                conn.commit()
+            logging.info("New tables initialized successfully.")
+        except Exception as e:
+            logging.error(f"Error initializing new tables: {e}")
+
+    def run_krx_data_fetch_script(self, corp_code: str, stock_code: str, start_date: str, end_date: str, krx_id: str, krx_pw: str) -> bool:
+        """
+        Executes a separate Python script within venv_krx to fetch KRX data.
+        """
+        script_path = self.project_root / 'scripts' / 'krx_data_fetch_worker.py'
+
+        if not os.path.exists(script_path):
+            logging.error(f"Krx data fetch worker script not found at {script_path}. Cannot proceed.")
+            return False
+
+        command = [
+            str(self.venv_krx_python),
+            str(script_path),
+            '--corp_code', corp_code,
+            '--stock_code', stock_code,
+            '--start_date', start_date,
+            '--end_date', end_date,
+            '--db_path', str(self.db_path)
+        ]
+        
+        subprocess_env = os.environ.copy()
+        subprocess_env['KRX_ID'] = krx_id
+        subprocess_env['KRX_PW'] = krx_pw
+
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=True, env=subprocess_env)
+            logging.info(f"Krx data fetch for {stock_code} completed. Output:\n{result.stdout}")
+            if result.stderr:
+                logging.warning(f"Krx data fetch for {stock_code} stderr:\n{result.stderr}")
+            return True
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Krx data fetch for {stock_code} failed with error:\n{e.stderr}\n{e.stdout}")
+            return False
+        except Exception as e:
+            logging.error(f"An unexpected error occurred during KRX data fetch for {stock_code}: {e}")
+            return False
+
+    def run_dart_data_fetch_script(self, corp_code: str, stock_code: str, bsns_year: int, reprt_code: str, dart_api_key: str) -> bool:
+        """
+        Executes a separate Python script within venv_dart to fetch DART outstanding shares data.
+        """
+        script_path = self.project_root / 'scripts' / 'dart_data_fetch_worker.py'
+
+        if not os.path.exists(script_path):
+            logging.error(f"DART data fetch worker script not found at {script_path}. Cannot proceed.")
+            return False
+
+        command = [
+            str(self.venv_dart_python),
+            str(script_path),
+            '--corp_code', corp_code,
+            '--stock_code', stock_code,
+            '--bsns_year', str(bsns_year),
+            '--reprt_code', reprt_code,
+            '--db_path', str(self.db_path)
+        ]
+        
+        subprocess_env = os.environ.copy()
+        subprocess_env['DART_API_KEY'] = dart_api_key
+
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=True, env=subprocess_env)
+            logging.info(f"DART data fetch for {stock_code} completed. Output:\n{result.stdout}")
+            if result.stderr:
+                logging.warning(f"DART data fetch for {stock_code} stderr:\n{result.stderr}")
+            return True
+        except subprocess.CalledProcessError as e:
+            logging.error(f"DART data fetch for {stock_code} failed with error:\n{e.stderr}\n{e.stdout}")
+            return False
+        except Exception as e:
+            logging.error(f"An unexpected error occurred during DART data fetch for {stock_code}: {e}")
+            return False
+
+def main():
+    parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
+
 
     PROJECT_ROOT_DIR = Path('/home/ivjiyeonb/projects/financial_statement/')
     DB_PATH = PROJECT_ROOT_DIR / 'data' / 'financial_data.db'
 
-    TARGET_BSNS_YEAR = os.environ.get('TARGET_BSNS_YEAR')
-    logging.info(f"TARGET_BSNS_YEAR: {TARGET_BSNS_YEAR} (from environment variable)")
+    TARGET_BSNS_YEAR_STR = os.getenv('TARGET_BSNS_YEAR')
+    TARGET_REPRT_CODE = os.getenv('TARGET_REPRT_CODE')
 
-    TARGET_REPRT_CODE = os.environ.get('TARGET_REPRT_CODE')
-    logging.info(f"TARGET_REPRT_CODE: {TARGET_REPRT_CODE} (from environment variable)")
+    if not TARGET_BSNS_YEAR_STR:
+        logging.error("Error: TARGET_BSNS_YEAR environment variable is not set.")
+        sys.exit(1)
+    if not TARGET_REPRT_CODE:
+        logging.error("Error: TARGET_REPRT_CODE environment variable is not set.")
+        sys.exit(1)
 
-    logging.info(f"Full os.environ: {os.environ} (for debugging purposes)")
+    try:
+        TARGET_BSNS_YEAR = int(TARGET_BSNS_YEAR_STR)
+    except ValueError:
+        logging.error(f"Error: TARGET_BSNS_YEAR environment variable '{TARGET_BSNS_YEAR_STR}' is not a valid integer.")
+        sys.exit(1)
 
     analyzer = FinancialAnalyzer(DB_PATH)
 
     # Initialize variables to hold results from processing, to be used in report generation
     processed_stage2_companies_df = pd.DataFrame()
     processed_stage3_companies_df = pd.DataFrame()
+    analysis_df_all_ratios = pd.DataFrame() # To store the full analysis df if calculated
 
     try:
-        # --- Stage 1 & 2: Financial Health and Profitability Check ---
-        if args.stage == '1_2' or args.stage == 'all':
-            logging.info("--- Running Stage 1 & 2: Financial Health and Profitability Check ---")
-            company_info_df = analyzer.load_company_info()
-            financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+        # Load all common data once
+        company_info_df = analyzer.load_company_info()
+        financial_df_full = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
 
-            if 'thstrm_amount' not in financial_df.columns:
-                logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
+        # Add checks for Net_Income and Total_Equity in financial_df_full
+        if not {'ifrs-full_ProfitLoss', 'ifrs-full_Equity'}.issubset(financial_df_full['account_id'].unique()):
+            logging.warning("Warning: 'ifrs-full_ProfitLoss' or 'ifrs-full_Equity' missing from financial_df_full. PBR/EPS might be affected.")
+
+        # Convert 'thstrm_amount' to numeric, coercing errors, then check for NaNs in critical columns
+        financial_df_full['thstrm_amount'] = pd.to_numeric(financial_df_full['thstrm_amount'], errors='coerce')
+        if financial_df_full[financial_df_full['account_id'] == 'ifrs-full_ProfitLoss']['thstrm_amount'].isnull().any():
+            logging.warning("Warning: NaN values found in 'thstrm_amount' for 'ifrs-full_ProfitLoss' in financial_df_full.")
+        if financial_df_full[financial_df_full['account_id'] == 'ifrs-full_Equity']['thstrm_amount'].isnull().any():
+            logging.warning("Warning: NaN values found in 'thstrm_amount' for 'ifrs-full_Equity' in financial_df_full.")
+        krx_sector_df = analyzer.load_krx_sector_data()
+        #outstanding_shares_df = analyzer.load_outstanding_shares()
+        #stock_prices_df = analyzer.load_stock_prices()
+
+        if 'thstrm_amount' not in financial_df_full.columns:
+            logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
+            return # Exit main if critical data is missing
+        
+        if krx_sector_df.empty:
+            logging.warning("KRX sector data not loaded, proceeding without sector information.")
+        logging.info("--- Running Stage 1 & 2: Financial Health and Profitability Check ---")
+
+        current_date = datetime.now()
+
+        # Load environment variables for data fetching
+        KRX_ID = os.getenv('KRX_ID')
+        KRX_PW = os.getenv('KRX_PW')
+        DART_API_KEY = os.getenv('DART_API_KEY')
+
+        if not KRX_ID or not KRX_PW:
+            logging.error("KRX_ID or KRX_PW environment variables are not set. Please set them in the .env file.")
+            return
+        logging.info(f"KRX_ID set: {bool(KRX_ID)}")
+
+        if not DART_API_KEY:
+            logging.error("DART_API_KEY environment variable is not set. Please set it in the .env file.")
+            return
+        logging.info(f"DART_API_KEY set: {bool(DART_API_KEY)}")
+
+        # --- Step 1: Initial Calculation of Ratios for Stage 1 & 2 Filtering ---
+        # Temporarily pass empty dataframes for outstanding_shares_df and stock_prices_df
+        # as valuation ratios are not needed for Stage 1 & 2 initial filtering.
+        # This avoids N/A issues when calculating basic financial health ratios.
+        logging.info("Performing initial ratio calculation for Stage 1 & 2 filtering (without valuation ratios)...")
+        initial_analysis_df = analyzer.calculate_financial_ratios(
+            financial_df_full, company_info_df, pd.DataFrame(columns=['corp_code', 'outstanding_shares']), pd.DataFrame(columns=['stock_code', 'close_price']), krx_sector_df, calculate_valuation_ratios=False
+        )
+        processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(initial_analysis_df)
+
+        if not processed_stage2_companies_df.empty:
+            analyzer.save_filtered_companies(
+                processed_stage2_companies_df['corp_code'].tolist(),
+                TARGET_BSNS_YEAR,
+                TARGET_REPRT_CODE,
+                append=False
+            )
+            logging.info(f"Stage 1 & 2 initial filtering completed. {len(processed_stage2_companies_df)} companies passed and saved to 'filtered_companies' table for data fetching.")
+        else:
+            logging.info("No companies passed Stage 1 & 2 initial filtering. No data will be fetched.")
+            analysis_df_all_ratios = pd.DataFrame() # No companies, so no ratios
+        
+        # --- Step 2: Fetch Data for the Filtered Companies ---
+        if not processed_stage2_companies_df.empty:
+            analyzer.init_new_tables() # Clear existing stock prices/outstanding shares for a fresh fetch
+            
+            # Load the newly filtered companies
+            filtered_companies_list = analyzer.get_filtered_companies(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+            
+            if filtered_companies_list:
+                logging.info(f"Fetching data for {len(filtered_companies_list)} companies...")
+                for company_data in filtered_companies_list:
+                    corp_code = company_data['corp_code']
+                    stock_code = company_data['stock_code']
+                    bsns_year_data_fetch = company_data['bsns_year']
+                    reprt_code_data_fetch = company_data['reprt_code']
+                    
+                    logging.info(f"Initiating data fetch for {company_data['corp_name']} (Stock Code: {stock_code}, Corp Code: {corp_code})...")
+                    start_date_krx = (current_date - timedelta(days=7)).strftime('%Y%m%d')
+                    end_date_krx = current_date.strftime('%Y%m%d')
+
+                    # Fetch KRX stock prices (OHLCV)
+                    logging.info(f"Attempting to fetch KRX stock prices for {company_data['corp_name']} ({stock_code}) from {start_date_krx} to {end_date_krx}...")
+                    try:
+                        if analyzer.run_krx_data_fetch_script(corp_code, stock_code, start_date_krx, end_date_krx, KRX_ID, KRX_PW):
+                            logging.info(f"Successfully fetched KRX stock prices for {company_data['corp_name']} ({stock_code}).")
+                        else:
+                            logging.error(f"Failed to fetch KRX stock prices for {company_data['corp_name']} ({stock_code}). Check previous logs for details.")
+                    except Exception as e:
+                        logging.error(f"An error occurred while fetching KRX stock prices for {company_data['corp_name']} ({stock_code}): {e}")
+
+                    # Fetch DART outstanding shares
+                    logging.info(f"Attempting to fetch DART outstanding shares for {company_data['corp_name']} ({stock_code}) for year {bsns_year_data_fetch}...")
+                    try:
+                        if analyzer.run_dart_data_fetch_script(corp_code, stock_code, bsns_year_data_fetch, reprt_code_data_fetch, DART_API_KEY):
+                            logging.info(f"Successfully fetched DART outstanding shares for {company_data['corp_name']} ({stock_code}).")
+                        else:
+                            logging.error(f"Failed to fetch DART outstanding shares for {company_data['corp_name']} ({stock_code}). Check previous logs for details.")
+                    except Exception as e:
+                        logging.error(f"An error occurred while fetching DART outstanding shares for {company_data['corp_name']} ({stock_code}): {e}")
             else:
-                krx_sector_df = analyzer.load_krx_sector_data()
-                if krx_sector_df.empty:
-                    logging.warning("KRX sector data not loaded, proceeding without sector information.")
+                logging.info("No filtered companies found after re-loading for data fetching. This should not happen if Stage 1&2 passed.")
 
-                analysis_df_all_ratios = analyzer.calculate_financial_ratios(financial_df, company_info_df, krx_sector_df)
-                processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df_all_ratios)
+            # Re-load outstanding shares and stock prices after fetching new data
+            outstanding_shares_df = analyzer.load_outstanding_shares()
+            stock_prices_df = analyzer.load_stock_prices()
+            logging.info(f"Re-loaded {len(outstanding_shares_df)} outstanding shares records after fetch.")
+            logging.info(f"Re-loaded {len(stock_prices_df)} stock price records after fetch.")
 
-                if not processed_stage2_companies_df.empty:
-                    analyzer.save_filtered_companies(
-                        processed_stage2_companies_df['corp_code'].tolist(),
-                        TARGET_BSNS_YEAR,
-                        TARGET_REPRT_CODE,
-                        append=False
-                    )
-                    logging.info(f"Stage 1 & 2 completed. {len(processed_stage2_companies_df)} companies passed and saved to 'filtered_companies' table.")
-                else:
-                    logging.info("No companies passed Stage 1 & 2. 'filtered_companies' table might be empty.")
+            # --- Step 3: Recalculate All Ratios with Fetched Data for Final Stages ---
+            logging.info("Recalculating all financial ratios, including valuation ratios, with newly fetched data...")
+            analysis_df_all_ratios = analyzer.calculate_financial_ratios(
+                financial_df_full, company_info_df, outstanding_shares_df, stock_prices_df, krx_sector_df, calculate_valuation_ratios=True
+            )
+            # Re-apply stage 1 & 2 filters to the fully calculated dataframe to ensure consistency for reporting
+            processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df_all_ratios)
+            if not processed_stage2_companies_df.empty:
+                # Update saved filtered companies, though they should be largely the same
+                analyzer.save_filtered_companies(
+                    processed_stage2_companies_df['corp_code'].tolist(),
+                    TARGET_BSNS_YEAR,
+                    TARGET_REPRT_CODE,
+                    append=False
+                )
+                logging.info(f"Final Stage 1 & 2 applied. {len(processed_stage2_companies_df)} companies still pass. Proceeding to Stage 3.")
+            else:
+                logging.info("No companies passed Stage 1 & 2 after re-calculating with fetched data. Stage 3 will not proceed.")
+
 
         # --- Stage 3: Valuation Metrics Check ---
-        if args.stage == '3' or args.stage == 'all':
-            logging.info("--- Running Stage 3: Valuation Metrics Check ---")
-            companies_for_stage3_df = analyzer._load_filtered_companies_for_stage3(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
+        logging.info("--- Running Stage 3: Valuation Metrics Check ---")
+        
+        companies_for_stage3_df = processed_stage2_companies_df.copy()
+        if companies_for_stage3_df.empty:
+            logging.info("No companies passed Stage 1 & 2, so Stage 3 cannot proceed.")
+            processed_stage3_companies_df = pd.DataFrame() # Ensure this is empty
+        else:
+            # Filter analysis_df_all_ratios for only those companies that passed Stage 1&2
+            analysis_df_stage3 = analysis_df_all_ratios[
+                analysis_df_all_ratios['corp_code'].isin(companies_for_stage3_df['corp_code'])
+            ].copy()
+            processed_stage3_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
 
-            if companies_for_stage3_df.empty:
-                logging.info("No companies found in 'filtered_companies' table to apply Stage 3. Make sure Stage 1 & 2 was run first.")
-            else:
-                all_financial_df = analyzer.load_financial_statements(TARGET_BSNS_YEAR, TARGET_REPRT_CODE)
-                company_info_df = analyzer.load_company_info()
-                krx_sector_df = analyzer.load_krx_sector_data()
-
-                filtered_corp_codes = companies_for_stage3_df['corp_code'].unique()
-                financial_df_stage3 = all_financial_df[all_financial_df['corp_code'].isin(filtered_corp_codes)]
-
-                if financial_df_stage3.empty:
-                    logging.warning("No financial data found for companies loaded for Stage 3.")
-                else:
-                    analysis_df_stage3 = analyzer.calculate_financial_ratios(financial_df_stage3, company_info_df, krx_sector_df)
-                    processed_stage3_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
-                    
-                    if not processed_stage3_companies_df.empty:
-                        analyzer.save_filtered_companies(
-                            processed_stage3_companies_df['corp_code'].tolist(),
-                            TARGET_BSNS_YEAR,
-                            TARGET_REPRT_CODE,
-                            append=False
-                        )
-                        logging.info(f"Stage 3 completed. {len(processed_stage3_companies_df)} companies passed all stages and saved to 'filtered_companies' table.")
-                    else:
-                        logging.info("No undervalued companies found based on Stage 3 criteria.")
+        if not processed_stage3_companies_df.empty:
+            analyzer.save_filtered_companies(
+                processed_stage3_companies_df['corp_code'].tolist(),
+                TARGET_BSNS_YEAR,
+                TARGET_REPRT_CODE,
+                append=False
+            )
+            logging.info(f"Stage 3 completed. {len(processed_stage3_companies_df)} companies passed all stages and saved to 'filtered_companies' table.")
+        else:
+            logging.info("No undervalued companies found based on Stage 3 criteria.")
 
         # --- Final Report Assembly ---
         final_report_lines = []
 
-        if args.stage == '1_2' or args.stage == 'all':
-            if not processed_stage2_companies_df.empty:
-                final_report_lines.append("Healthy Companies:")
-                healthy_companies_cols = ['corp_name', 'stock_code', 'Sector', 'PER', 'PBR', 'EPS', 'BPS']
-                display_df_healthy = processed_stage2_companies_df[[col for col in healthy_companies_cols if col in processed_stage2_companies_df.columns]].copy()
-                for col in ['PER', 'PBR', 'EPS', 'BPS']:
-                    if col in display_df_healthy.columns:
-                        display_df_healthy[col] = pd.to_numeric(display_df_healthy[col], errors='coerce')
-                        display_df_healthy[col] = display_df_healthy[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-                final_report_lines.append(display_df_healthy.to_string(index=False))
-                final_report_lines.append("") # Add a blank line for readability
-            elif args.stage == '1_2': # Only for stage 1_2, and no companies found.
-                logging.debug("No healthy companies found for Stage 1 & 2 report.")
+        if not processed_stage2_companies_df.empty:
+            final_report_lines.append("Healthy Companies:")
+            healthy_companies_cols = ['corp_name', 'stock_code', 'Sector', 'PER', 'PBR', 'EPS', 'BPS']
+            display_df_healthy = processed_stage2_companies_df[[col for col in healthy_companies_cols if col in processed_stage2_companies_df.columns]].copy()
+            for col in ['PER', 'PBR', 'EPS', 'BPS']:
+                if col in display_df_healthy.columns:
+                    display_df_healthy[col] = pd.to_numeric(display_df_healthy[col], errors='coerce')
+                    display_df_healthy[col] = display_df_healthy[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
+            final_report_lines.append(display_df_healthy.to_string(index=False))
+            final_report_lines.append("") # Add a blank line for readability
         
-        if args.stage == '3' or args.stage == 'all':
-            if not processed_stage3_companies_df.empty:
-                if final_report_lines: # Add a separator if Healthy Companies section already exists
-                    final_report_lines.append("") # Ensure a blank line between sections
-                final_report_lines.append("Undervalued Companies:")
-                undervalued_companies_cols = ['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']
-                display_df_undervalued = processed_stage3_companies_df[[col for col in undervalued_companies_cols if col in processed_stage3_companies_df.columns]].copy()
-                for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']:
-                    if col in display_df_undervalued.columns:
-                        display_df_undervalued[col] = pd.to_numeric(display_df_undervalued[col], errors='coerce')
-                        display_df_undervalued[col] = display_df_undervalued[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-                final_report_lines.append(display_df_undervalued.to_string(index=False))
-            elif args.stage == '3' and not final_report_lines: # Only for stage 3, and no companies found, and no previous report lines.
-                logging.debug("No undervalued companies found for Stage 3 report.")
+        if not processed_stage3_companies_df.empty:
+            if final_report_lines: # Add a separator if Healthy Companies section already exists
+                final_report_lines.append("") # Ensure a blank line between sections
+            final_report_lines.append("Undervalued Companies:")
+            undervalued_companies_cols = ['corp_name', 'stock_code', 'ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']
+            display_df_undervalued = processed_stage3_companies_df[[col for col in undervalued_companies_cols if col in processed_stage3_companies_df.columns]].copy()
+            for col in ['ROE', 'ROA', 'D_E_Ratio', 'Current_Ratio', 'Operating_Cash_Flow', 'PER', 'PBR', 'EPS', 'BPS']:
+                if col in display_df_undervalued.columns:
+                    display_df_undervalued[col] = pd.to_numeric(display_df_undervalued[col], errors='coerce')
+                    display_df_undervalued[col] = display_df_undervalued[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
+            final_report_lines.append(display_df_undervalued.to_string(index=False))
 
 
         # If no companies were found in any relevant stage for the requested report type, or if no stages were specified for reporting
@@ -510,11 +787,6 @@ def main():
         logging.error(f"Error: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}", exc_info=True)
-        logging.error(f"Error: {e}")
-    except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
-        logging.error(f"An unexpected error occurred: {e}")
-    
 
 
 if __name__ == "__main__":
