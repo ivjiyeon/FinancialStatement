@@ -129,8 +129,8 @@ class FinancialAnalyzer:
         logging.info(f"Loaded {len(krx_sector_df)} KRX sector records.")
         return krx_sector_df
 
-    def calculate_financial_ratios(self, financial_df, company_info_df, outstanding_shares_df, stock_prices_df, krx_sector_df=None, calculate_valuation_ratios=True):
-        logging.info("Calculating financial ratios...")
+    def _calculate_base_ratios(self, financial_df, company_info_df, krx_sector_df=None):
+        logging.info("Calculating base financial ratios...")
         if financial_df.empty:
             logging.warning("Financial DataFrame is empty, cannot calculate ratios.")
             return pd.DataFrame()
@@ -174,20 +174,6 @@ class FinancialAnalyzer:
         company_info_df_processed = company_info_df[['corp_code', 'stock_code', 'corp_name']].drop_duplicates(subset=['corp_code'])
         merged_df = pd.merge(merged_df, company_info_df_processed, on='corp_code', how='left')
 
-        # Merge with outstanding shares
-        logging.info(f"Before merging outstanding_shares_df: merged_df shape {merged_df.shape}, outstanding_shares_df shape {outstanding_shares_df.shape}")
-        merged_df = pd.merge(merged_df, outstanding_shares_df[['corp_code', 'outstanding_shares']], on='corp_code', how='left')
-        logging.info(f"After merging outstanding_shares_df: merged_df shape {merged_df.shape}")
-        logging.info(f"NaNs in 'outstanding_shares' after merge: {merged_df['outstanding_shares'].isnull().sum()}")
-        merged_df['outstanding_shares'] = merged_df['outstanding_shares'].fillna(pd.NA)
-
-        # Merge with stock prices
-        logging.info(f"Before merging stock_prices_df: merged_df shape {merged_df.shape}, stock_prices_df shape {stock_prices_df.shape}")
-        merged_df = pd.merge(merged_df, stock_prices_df[['stock_code', 'close_price']], on='stock_code', how='left')
-        logging.info(f"After merging stock_prices_df: merged_df shape {merged_df.shape}")
-        logging.info(f"NaNs in 'close_price' after merge: {merged_df['close_price'].isnull().sum()}")
-        merged_df['close_price'] = merged_df['close_price'].fillna(pd.NA)
-
         # Merge with KRX sector data
         if krx_sector_df is not None and not krx_sector_df.empty:
             merged_df = pd.merge(merged_df, krx_sector_df[['stock_code', 'Sector']], on='stock_code', how='left')
@@ -197,10 +183,6 @@ class FinancialAnalyzer:
         ratio_cols = ['Total_Assets', 'Total_Equity', 'Total_Liabilities', 'Current_Assets', 'Current_Liabilities', 
                     'Net_Income', 'Operating_Cash_Flow', 'D_E_Ratio', 'Current_Ratio', 'ROE', 'ROA']
         
-        # Add valuation specific ratio columns only if they are to be calculated
-        if calculate_valuation_ratios:
-            ratio_cols.extend(['EPS', 'BPS', 'PER', 'PBR'])
-            
         for col in ratio_cols:
             if col not in merged_df.columns:
                 merged_df[col] = pd.NA
@@ -234,75 +216,97 @@ class FinancialAnalyzer:
         # ROA (Return on Assets)
         merged_df['ROA'] = merged_df['Net_Income'] / merged_df['Total_Assets']
         merged_df['ROA'] = merged_df['ROA'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
-
-        # Valuation Ratios (EPS, BPS, PER, PBR) only if explicitly requested
-        if calculate_valuation_ratios:
-            logging.info("Calculating PER, PBR, EPS, and BPS using vectorized operations...")
-            # Calculate EPS: Net Income / Outstanding Shares * 4 (annualized assuming quarterly data)
-            # Need to ensure Net_Income is properly adjusted for annual reports based on Q3 thstrm_add_amount if applicable
-
-            # Get thstrm_add_amount for ProfitLoss for current bsns_year and Q3 (11014) report code
-            # This requires access to the full financial_df including thstrm_add_amount, which is now available.
-            q3_add_amounts = financial_df[
-                (financial_df['account_id'] == 'ifrs-full_ProfitLoss') &
-                (financial_df['reprt_code'] == '11014') &
-                (financial_df['sj_div'].isin(['IS', 'CIS']))
-            ][['corp_code', 'bsns_year', 'thstrm_add_amount']].drop_duplicates()
-
-            # Merge Q3 additional amounts to merged_df
-            merged_df = pd.merge(
-                merged_df,
-                q3_add_amounts.rename(columns={'thstrm_add_amount': 'Q3_ProfitLoss_Add_Amount'}),
-                on=['corp_code', 'bsns_year'],
-                how='left'
-            )
-            merged_df['Q3_ProfitLoss_Add_Amount'] = merged_df['Q3_ProfitLoss_Add_Amount'].fillna(0)
-
-            # Adjust Net_Income for annual reports (reprt_code '11011') by subtracting Q3 additional amount
-            annual_report_mask = merged_df['reprt_code'] == '11011'
-            merged_df.loc[annual_report_mask, 'Net_Income_Adjusted'] = \
-                merged_df.loc[annual_report_mask, 'Net_Income'] - merged_df.loc[annual_report_mask, 'Q3_ProfitLoss_Add_Amount']
-            merged_df['Net_Income_Adjusted'] = merged_df['Net_Income_Adjusted'].fillna(merged_df['Net_Income'])
-
-            # Calculate EPS: Net Income / Outstanding Shares * 4 (annualized assuming quarterly data)
-            # Check for valid outstanding_shares before calculating EPS and BPS
-            merged_df['EPS'] = merged_df.apply(lambda row: 
-                row['Net_Income_Adjusted'] / row['outstanding_shares'] * 4 
-                if pd.notna(row['outstanding_shares']) and row['outstanding_shares'] != 0 
-                else pd.NA, axis=1
-            )
-            merged_df['BPS'] = merged_df.apply(lambda row: 
-                row['Total_Equity'] / row['outstanding_shares'] 
-                if pd.notna(row['outstanding_shares']) and row['outstanding_shares'] != 0 
-                else pd.NA, axis=1
-            )
-
-            # Handle division by zero or NaN for EPS and BPS
-            merged_df['EPS'] = merged_df['EPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
-            merged_df['BPS'] = merged_df['BPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
-
-            # Calculate PER (Price / EPS)
-            merged_df['PER'] = merged_df['close_price'] / merged_df['EPS']
-            merged_df['PER'] = merged_df['PER'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
-            # Ensure PER is not negative if EPS is negative
-            merged_df.loc[merged_df['EPS'] < 0, 'PER'] = pd.NA
-
-            # Calculate PBR (Price / BPS)
-            merged_df['PBR'] = merged_df['close_price'] / merged_df['BPS']
-            merged_df['PBR'] = merged_df['PBR'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
-            # Ensure PBR is not negative if BPS is negative
-            merged_df.loc[merged_df['BPS'] < 0, 'PBR'] = pd.NA
-
-            # Drop the temporary Net_Income_Adjusted column
-            merged_df = merged_df.drop(columns=['Net_Income_Adjusted'], errors='ignore')
-        else:
-            logging.info("Skipping PER, PBR, EPS, and BPS calculation.")
-            for col in ['EPS', 'BPS', 'PER', 'PBR']:
-                if col not in merged_df.columns:
-                    merged_df[col] = pd.NA
         
-        logging.info("Financial ratios calculated.")
+        logging.info("Base financial ratios calculated.")
         return merged_df
+
+    def _calculate_valuation_ratios(self, analysis_df, financial_df, outstanding_shares_df, stock_prices_df):
+        logging.info("Calculating valuation ratios (PER, PBR, EPS, BPS)...")
+        if analysis_df.empty:
+            logging.warning("Analysis DataFrame is empty, cannot calculate valuation ratios.")
+            return pd.DataFrame()
+
+        # Merge with outstanding shares
+        logging.debug(f"Before merging outstanding_shares_df: analysis_df shape {analysis_df.shape}, outstanding_shares_df shape {outstanding_shares_df.shape}")
+        analysis_df = pd.merge(analysis_df, outstanding_shares_df[['corp_code', 'outstanding_shares']], on='corp_code', how='left')
+        logging.debug(f"After merging outstanding_shares_df: analysis_df shape {analysis_df.shape}")
+        logging.debug(f"NaNs in 'outstanding_shares' after merge: {analysis_df['outstanding_shares'].isnull().sum()}")
+        analysis_df['outstanding_shares'] = analysis_df['outstanding_shares'].fillna(pd.NA)
+
+        # Merge with stock prices
+        logging.debug(f"Before merging stock_prices_df: analysis_df shape {analysis_df.shape}, stock_prices_df shape {stock_prices_df.shape}")
+        analysis_df = pd.merge(analysis_df, stock_prices_df[['stock_code', 'close_price']], on='stock_code', how='left')
+        logging.debug(f"After merging stock_prices_df: analysis_df shape {analysis_df.shape}")
+        logging.debug(f"NaNs in 'close_price' after merge: {analysis_df['close_price'].isnull().sum()}")
+        analysis_df['close_price'] = analysis_df['close_price'].fillna(pd.NA)
+
+        # Initialize valuation ratio columns
+        valuation_ratio_cols = ['EPS', 'BPS', 'PER', 'PBR']
+        for col in valuation_ratio_cols:
+            if col not in analysis_df.columns:
+                analysis_df[col] = pd.NA
+
+        logging.info("Calculating PER, PBR, EPS, and BPS using vectorized operations...")
+        # Calculate EPS: Net Income / Outstanding Shares * 4 (annualized assuming quarterly data)
+        # Need to ensure Net_Income is properly adjusted for annual reports based on Q3 thstrm_add_amount if applicable
+
+        # Get thstrm_add_amount for ProfitLoss for current bsns_year and Q3 (11014) report code
+        # This requires access to the full financial_df including thstrm_add_amount, which is now available.
+        q3_add_amounts = financial_df[
+            (financial_df['account_id'] == 'ifrs-full_ProfitLoss') &
+            (financial_df['reprt_code'] == '11014') &
+            (financial_df['sj_div'].isin(['IS', 'CIS']))
+        ][['corp_code', 'bsns_year', 'thstrm_add_amount']].drop_duplicates()
+
+        # Merge Q3 additional amounts to analysis_df
+        analysis_df = pd.merge(
+            analysis_df,
+            q3_add_amounts.rename(columns={'thstrm_add_amount': 'Q3_ProfitLoss_Add_Amount'}),
+            on=['corp_code', 'bsns_year'],
+            how='left'
+        )
+        analysis_df['Q3_ProfitLoss_Add_Amount'] = analysis_df['Q3_ProfitLoss_Add_Amount'].fillna(0)
+
+        # Adjust Net_Income for annual reports (reprt_code '11011') by subtracting Q3 additional amount
+        annual_report_mask = analysis_df['reprt_code'] == '11011'
+        analysis_df.loc[annual_report_mask, 'Net_Income_Adjusted'] = \
+            analysis_df.loc[annual_report_mask, 'Net_Income'] - analysis_df.loc[annual_report_mask, 'Q3_ProfitLoss_Add_Amount']
+        analysis_df['Net_Income_Adjusted'] = analysis_df['Net_Income_Adjusted'].fillna(analysis_df['Net_Income'])
+
+        # Calculate EPS: Net Income / Outstanding Shares * 4 (annualized assuming quarterly data)
+        # Check for valid outstanding_shares before calculating EPS and BPS
+        analysis_df['EPS'] = analysis_df.apply(lambda row: 
+            row['Net_Income_Adjusted'] / row['outstanding_shares'] * 4 
+            if pd.notna(row['outstanding_shares']) and row['outstanding_shares'] != 0 
+            else pd.NA, axis=1
+        )
+        analysis_df['BPS'] = analysis_df.apply(lambda row: 
+            row['Total_Equity'] / row['outstanding_shares'] 
+            if pd.notna(row['outstanding_shares']) and row['outstanding_shares'] != 0 
+            else pd.NA, axis=1
+        )
+
+        # Handle division by zero or NaN for EPS and BPS
+        analysis_df['EPS'] = analysis_df['EPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+        analysis_df['BPS'] = analysis_df['BPS'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+
+        # Calculate PER (Price / EPS)
+        analysis_df['PER'] = analysis_df['close_price'] / analysis_df['EPS']
+        analysis_df['PER'] = analysis_df['PER'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+        # Ensure PER is not negative if EPS is negative
+        analysis_df.loc[analysis_df['EPS'] < 0, 'PER'] = pd.NA
+
+        # Calculate PBR (Price / BPS)
+        analysis_df['PBR'] = analysis_df['close_price'] / analysis_df['BPS']
+        analysis_df['PBR'] = analysis_df['PBR'].replace([float('inf'), -float('inf')], pd.NA).fillna(pd.NA)
+        # Ensure PBR is not negative if BPS is negative
+        analysis_df.loc[analysis_df['BPS'] < 0, 'PBR'] = pd.NA
+
+        # Drop the temporary Net_Income_Adjusted column
+        analysis_df = analysis_df.drop(columns=['Net_Income_Adjusted', 'Q3_ProfitLoss_Add_Amount'], errors='ignore')
+        
+        logging.info("Valuation ratios calculated.")
+        return analysis_df
 
     def _apply_stage1_and_2_filters(self, analysis_df):
         logging.info("Applying Stage 1 & 2 filters...")
@@ -416,7 +420,8 @@ class FinancialAnalyzer:
                     analysis_date TEXT NOT NULL,
                     PRIMARY KEY (corp_code, bsns_year, reprt_code)
                 )
-            """)
+            """
+            )
             conn.commit()
 
             insert_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -492,14 +497,16 @@ class FinancialAnalyzer:
         """
         Executes a separate Python script within venv_krx to fetch KRX data.
         """
-        script_path = self.project_root / 'scripts' / 'krx_data_fetch_worker.py'
+        # Use PROJECT_ROOT defined globally and self.db_path
+        venv_krx_python = PROJECT_ROOT / 'venv_krx' / 'bin' / 'python'
+        script_path = PROJECT_ROOT / 'scripts' / 'krx_data_fetch_worker.py'
 
         if not os.path.exists(script_path):
             logging.error(f"Krx data fetch worker script not found at {script_path}. Cannot proceed.")
             return False
 
         command = [
-            str(self.venv_krx_python),
+            str(venv_krx_python),
             str(script_path),
             '--corp_code', corp_code,
             '--stock_code', stock_code,
@@ -529,14 +536,16 @@ class FinancialAnalyzer:
         """
         Executes a separate Python script within venv_dart to fetch DART outstanding shares data.
         """
-        script_path = self.project_root / 'scripts' / 'dart_data_fetch_worker.py'
+        # Use PROJECT_ROOT defined globally and self.db_path
+        venv_dart_python = PROJECT_ROOT / 'venv_dart' / 'bin' / 'python'
+        script_path = PROJECT_ROOT / 'scripts' / 'dart_data_fetch_worker.py'
 
         if not os.path.exists(script_path):
             logging.error(f"DART data fetch worker script not found at {script_path}. Cannot proceed.")
             return False
 
         command = [
-            str(self.venv_dart_python),
+            str(venv_dart_python),
             str(script_path),
             '--corp_code', corp_code,
             '--stock_code', stock_code,
@@ -607,8 +616,8 @@ def main():
         if financial_df_full[financial_df_full['account_id'] == 'ifrs-full_Equity']['thstrm_amount'].isnull().any():
             logging.warning("Warning: NaN values found in 'thstrm_amount' for 'ifrs-full_Equity' in financial_df_full.")
         krx_sector_df = analyzer.load_krx_sector_data()
-        #outstanding_shares_df = analyzer.load_outstanding_shares()
-        #stock_prices_df = analyzer.load_stock_prices()
+        #outstanding_shares_df = analyzer.load_outstanding_shares() # Load here if needed before any valuation ratio calculation
+        #stock_prices_df = analyzer.load_stock_prices() # Load here if needed before any valuation ratio calculation
 
         if 'thstrm_amount' not in financial_df_full.columns:
             logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
@@ -636,13 +645,8 @@ def main():
         logging.info(f"DART_API_KEY set: {bool(DART_API_KEY)}")
 
         # --- Step 1: Initial Calculation of Ratios for Stage 1 & 2 Filtering ---
-        # Temporarily pass empty dataframes for outstanding_shares_df and stock_prices_df
-        # as valuation ratios are not needed for Stage 1 & 2 initial filtering.
-        # This avoids N/A issues when calculating basic financial health ratios.
-        logging.info("Performing initial ratio calculation for Stage 1 & 2 filtering (without valuation ratios)...")
-        initial_analysis_df = analyzer.calculate_financial_ratios(
-            financial_df_full, company_info_df, pd.DataFrame(columns=['corp_code', 'outstanding_shares']), pd.DataFrame(columns=['stock_code', 'close_price']), krx_sector_df, calculate_valuation_ratios=False
-        )
+        logging.info("Performing initial ratio calculation for Stage 1 & 2 filtering (base ratios only)...")
+        initial_analysis_df = analyzer._calculate_base_ratios(financial_df_full, company_info_df, krx_sector_df)
         processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(initial_analysis_df)
 
         if not processed_stage2_companies_df.empty:
@@ -672,29 +676,29 @@ def main():
                     bsns_year_data_fetch = company_data['bsns_year']
                     reprt_code_data_fetch = company_data['reprt_code']
                     
-                    logging.info(f"Initiating data fetch for {company_data['corp_name']} (Stock Code: {stock_code}, Corp Code: {corp_code})...")
+                    logging.info(f"Initiating data fetch for (Stock Code: {stock_code}, Corp Code: {corp_code})...")
                     start_date_krx = (current_date - timedelta(days=7)).strftime('%Y%m%d')
                     end_date_krx = current_date.strftime('%Y%m%d')
 
                     # Fetch KRX stock prices (OHLCV)
-                    logging.info(f"Attempting to fetch KRX stock prices for {company_data['corp_name']} ({stock_code}) from {start_date_krx} to {end_date_krx}...")
+                    logging.info(f"Attempting to fetch KRX stock prices for ({stock_code}) from {start_date_krx} to {end_date_krx}...")
                     try:
                         if analyzer.run_krx_data_fetch_script(corp_code, stock_code, start_date_krx, end_date_krx, KRX_ID, KRX_PW):
-                            logging.info(f"Successfully fetched KRX stock prices for {company_data['corp_name']} ({stock_code}).")
+                            logging.info(f"Successfully fetched KRX stock prices for ({stock_code}).")
                         else:
-                            logging.error(f"Failed to fetch KRX stock prices for {company_data['corp_name']} ({stock_code}). Check previous logs for details.")
+                            logging.error(f"Failed to fetch KRX stock prices for ({stock_code}). Check previous logs for details.")
                     except Exception as e:
-                        logging.error(f"An error occurred while fetching KRX stock prices for {company_data['corp_name']} ({stock_code}): {e}")
+                        logging.error(f"An error occurred while fetching KRX stock prices for ({stock_code}): {e}")
 
                     # Fetch DART outstanding shares
-                    logging.info(f"Attempting to fetch DART outstanding shares for {company_data['corp_name']} ({stock_code}) for year {bsns_year_data_fetch}...")
+                    logging.info(f"Attempting to fetch DART outstanding shares for ({stock_code}) for year {bsns_year_data_fetch}...")
                     try:
                         if analyzer.run_dart_data_fetch_script(corp_code, stock_code, bsns_year_data_fetch, reprt_code_data_fetch, DART_API_KEY):
-                            logging.info(f"Successfully fetched DART outstanding shares for {company_data['corp_name']} ({stock_code}).")
+                            logging.info(f"Successfully fetched DART outstanding shares for ({stock_code}).")
                         else:
-                            logging.error(f"Failed to fetch DART outstanding shares for {company_data['corp_name']} ({stock_code}). Check previous logs for details.")
+                            logging.error(f"Failed to fetch DART outstanding shares for ({stock_code}). Check previous logs for details.")
                     except Exception as e:
-                        logging.error(f"An error occurred while fetching DART outstanding shares for {company_data['corp_name']} ({stock_code}): {e}")
+                        logging.error(f"An unexpected error occurred during DART data fetch for ({stock_code}): {e}")
             else:
                 logging.info("No filtered companies found after re-loading for data fetching. This should not happen if Stage 1&2 passed.")
 
@@ -703,12 +707,22 @@ def main():
             stock_prices_df = analyzer.load_stock_prices()
             logging.info(f"Re-loaded {len(outstanding_shares_df)} outstanding shares records after fetch.")
             logging.info(f"Re-loaded {len(stock_prices_df)} stock price records after fetch.")
+            logging.debug(f"Shape of outstanding_shares_df after reload: {outstanding_shares_df.shape}")
+            logging.debug(f"Shape of stock_prices_df after reload: {stock_prices_df.shape}")
+            logging.debug(f"Sample outstanding_shares_df head:\n{outstanding_shares_df.head()}")
+            logging.debug(f"Sample stock_prices_df head:\n{stock_prices_df.head()}")
+            logging.debug(f"Shape of outstanding_shares_df after reload: {outstanding_shares_df.shape}")
+            logging.debug(f"Shape of stock_prices_df after reload: {stock_prices_df.shape}")
+            logging.debug(f"Sample outstanding_shares_df head:
+{outstanding_shares_df.head()}")
+            logging.debug(f"Sample stock_prices_df head:
+{stock_prices_df.head()}")
 
             # --- Step 3: Recalculate All Ratios with Fetched Data for Final Stages ---
             logging.info("Recalculating all financial ratios, including valuation ratios, with newly fetched data...")
-            analysis_df_all_ratios = analyzer.calculate_financial_ratios(
-                financial_df_full, company_info_df, outstanding_shares_df, stock_prices_df, krx_sector_df, calculate_valuation_ratios=True
-            )
+            analysis_df_all_ratios = analyzer._calculate_base_ratios(financial_df_full, company_info_df, krx_sector_df)
+            analysis_df_all_ratios = analyzer._calculate_valuation_ratios(analysis_df_all_ratios, financial_df_full, outstanding_shares_df, stock_prices_df)
+            
             # Re-apply stage 1 & 2 filters to the fully calculated dataframe to ensure consistency for reporting
             processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df_all_ratios)
             if not processed_stage2_companies_df.empty:

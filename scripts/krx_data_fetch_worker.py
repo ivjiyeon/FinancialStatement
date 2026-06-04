@@ -5,6 +5,8 @@ from pykrx import stock
 from datetime import datetime
 import logging
 from pathlib import Path
+import os
+import sys
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,12 +18,26 @@ def _get_db_connection(db_path: Path):
 def fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path: Path, stock_code: str, start_date: str, end_date: str):
     logging.info(f"Attempting to fetch OHLCV data for stock {stock_code} from {start_date} to {end_date}...")
     try:
+        krx_id = os.getenv('KRX_ID')
+        krx_pw = os.getenv('KRX_PW')
+
+        if not krx_id or not krx_pw:
+            logging.error(f"KRX_ID or KRX_PW environment variables are not set for krx_data_fetch_worker.py. Cannot fetch KRX data for {stock_code}.")
+            return False
+
+        try:
+            stock.login(krx_id, krx_pw)
+            logging.info(f"Successfully logged into KRX for {stock_code}.")
+        except Exception as login_e:
+            logging.error(f"Failed to log into KRX for {stock_code}: {login_e}. Check KRX_ID and KRX_PW environment variables.")
+            return False
+
         df = stock.get_market_ohlcv_by_date(start_date, end_date, stock_code)
         logging.info(f"Successfully retrieved OHLCV data for {stock_code} ({len(df)} records).")
 
         if df.empty:
             logging.warning(f"No OHLCV data found for {stock_code} from {start_date} to {end_date}. Skipping storage in stock_prices_data.")
-            return
+            return True
 
         # Rename columns to English for consistency with database schema
         df = df.rename(columns={
@@ -57,8 +73,10 @@ def fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path: Path, stock_co
             ''', (stock_code, trade_date, open_price, high_price, low_price, close_price, volume))
             conn.commit()
         logging.info(f"Successfully stored OHLCV data for {stock_code} (close_price: {close_price}) on {trade_date}.")
+        return True
     except Exception as e:
         logging.error(f"Failed to fetch or store OHLCV data for {stock_code} from {start_date} to {end_date}: {e}")
+        return False
 
 def main():
     parser = argparse.ArgumentParser(description='Fetch KRX stock data and store in DB.')
@@ -74,7 +92,8 @@ def main():
     db_path = Path(args.db_path)
 
     # Call the existing function for OHLCV data
-    fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path, args.stock_code, args.start_date, args.end_date)
+    if not fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path, args.stock_code, args.start_date, args.end_date):
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()

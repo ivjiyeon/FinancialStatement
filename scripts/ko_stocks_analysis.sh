@@ -6,7 +6,6 @@ set -e
 # Define project root and virtual environment paths
 PROJECT_ROOT="/home/ivjiyeonb/projects/financial_statement"
 VENV_DART="${PROJECT_ROOT}/venv_dart"
-VENV_KRX="${PROJECT_ROOT}/venv_krx"
 LOG_FILE="${PROJECT_ROOT}/scripts/run_all_process.log"
 ANALYZE_ERROR_LOG="${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued_error.log"
 
@@ -28,8 +27,6 @@ if [ -z "${BSNS_YEAR}" ] || [ -z "${REPRT_CODE}" ]; then
     exit 1
 fi
 
-
-
 # Export for Python scripts
 export TARGET_BSNS_YEAR="${BSNS_YEAR}"
 export TARGET_REPRT_CODE="${REPRT_CODE}"
@@ -40,52 +37,61 @@ export TARGET_REPRT_CODE="${REPRT_CODE}"
 
     # Load environment variables from .env file
     if [ -f "${PROJECT_ROOT}/.env" ]; then
-        export $(grep -v '^#' "${PROJECT_ROOT}/.env" | xargs)
+        # Read .env file line by line and export variables
+        while IFS='=' read -r key value; do
+            if [[ ! -z "$key" && ! "$key" =~ ^# ]]; then
+                export "$key"="$value"
+            fi
+        done < "${PROJECT_ROOT}/.env"
         echo "Environment variables loaded from .env"
     else
         echo "Warning: .env file not found at ${PROJECT_ROOT}/.env"
     fi
 
+    echo "KRX_ID in shell: ${KRX_ID}"
+    echo "KRX_PW in shell: ${KRX_PW}"
+    echo "DART_API_KEY in shell: ${DART_API_KEY}"
 
-
-
-
-
-
-    # 1. Fetch KRX sector data
-    echo "Running krx_sector/get_krx_sector_data_final.py..."
+    # 1. Fetch KRX sector data (if uncommented in the future)
+    # echo "Running krx_sector/get_krx_sector_data_final.py..."
     # "${VENV_KRX}/bin/python3" "${PROJECT_ROOT}/krx_sector/get_krx_sector_data_final.py"
 
-    # 2. Fetch DART financial statements
-    echo "Running dart/get_financial_statements.py..."
+    # 2. Fetch DART financial statements (if uncommented in the future)
+    # echo "Running dart/get_financial_statements.py..."
     # "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/dart/get_financial_statements.py"
 
     # Clear analysis-related tables before proceeding to filtering
     echo "Running scripts/clear_analysis_tables.py to clear old analysis data..."
     "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/clear_analysis_tables.py"
 
-    # 3. Analyze and identify undervalued companies (Stage 1 & 2 Filtering)
-    echo "Running scripts/analyze_and_identify_undervalued.py (Stage 1 & 2)..."
-    "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 1_2
-
-
+    echo "Running scripts/analyze_and_identify_undervalued.py (Full Analysis)..."
+    # Execute the main analysis script. Its stdout is captured later for reporting.
+    # Its stderr is redirected to ANALYZE_ERROR_LOG.
+    "${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" 2> >(tee -a "${ANALYZE_ERROR_LOG}" >&2)
 
     echo "All financial analysis processes completed successfully at $(date)..."
 
 ) >> "${LOG_FILE}" 2>&1
 
-# 5. Analyze and identify undervalued companies (Stage 3 Filtering with PER, PBR, ROE)
-# The stdout of this script is captured into PYTHON_REPORT
-# The stderr of this script is redirected to ANALYZE_ERROR_LOG
-PYTHON_REPORT=$("${VENV_DART}/bin/python3" "${PROJECT_ROOT}/scripts/analyze_and_identify_undervalued.py" --stage 3 2>> "${ANALYZE_ERROR_LOG}")
+# Capture the output of the main analysis script from the log file for Discord delivery.
+# This assumes analyze_and_identify_undervalued.py prints its report to stdout,
+# which is redirected to LOG_FILE.
+# We need to extract only the report section, which starts with "Healthy Companies:" or "Undervalued Companies:" or "No companies detected".
+REPORT_START_KEYWORD="Healthy Companies:"
+REPORT_START_KEYWORD2="Undervalued Companies:"
+REPORT_START_KEYWORD3="No companies detected"
+REPORT_CONTENT=$(grep -A 10000 -E "${REPORT_START_KEYWORD}|${REPORT_START_KEYWORD2}|${REPORT_START_KEYWORD3}" "${LOG_FILE}" || true) # Use || true to prevent pipefail if grep finds nothing
 
-if [ $? -ne 0 ]; then
-    # If the Python script failed, output a generic error message
-    echo "Error: Financial analysis failed in Stage 3. Check ${ANALYZE_ERROR_LOG} for details in the attached log."
-    # Attach the log file for debugging
-    echo "MEDIA:${ANALYZE_ERROR_LOG}"
-    exit 1
+if [ -z "${REPORT_CONTENT}" ]; then
+    # If no report content is found, it means the Python script either failed silently or produced no output.
+    # In this case, we check the ANALYZE_ERROR_LOG for errors.
+    if [ -s "${ANALYZE_ERROR_LOG}" ]; then # -s checks if file exists and has size greater than zero
+        echo "Error: Financial analysis script produced no report. Check ${ANALYZE_ERROR_LOG} for errors."
+        echo "MEDIA:${ANALYZE_ERROR_LOG}"
+    else
+        echo "Error: Financial analysis script produced no output and no errors were logged."
+    fi
 else
-    # Finally, echo only the PYTHON_REPORT to standard output for cron job delivery
-    echo "${PYTHON_REPORT}"
+    # Output the report content to standard output for cron job delivery
+    echo "${REPORT_CONTENT}"
 fi
