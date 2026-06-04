@@ -571,26 +571,17 @@ class FinancialAnalyzer:
             return False
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze financial statements to identify undervalued companies.")
-
-
     PROJECT_ROOT_DIR = Path('/home/ivjiyeonb/projects/financial_statement/')
     DB_PATH = PROJECT_ROOT_DIR / 'data' / 'financial_data.db'
 
-    TARGET_BSNS_YEAR_STR = os.getenv('TARGET_BSNS_YEAR')
+    TARGET_BSNS_YEAR = os.getenv('TARGET_BSNS_YEAR')
     TARGET_REPRT_CODE = os.getenv('TARGET_REPRT_CODE')
 
-    if not TARGET_BSNS_YEAR_STR:
+    if not TARGET_BSNS_YEAR:
         logging.error("Error: TARGET_BSNS_YEAR environment variable is not set.")
         sys.exit(1)
     if not TARGET_REPRT_CODE:
         logging.error("Error: TARGET_REPRT_CODE environment variable is not set.")
-        sys.exit(1)
-
-    try:
-        TARGET_BSNS_YEAR = int(TARGET_BSNS_YEAR_STR)
-    except ValueError:
-        logging.error(f"Error: TARGET_BSNS_YEAR environment variable '{TARGET_BSNS_YEAR_STR}' is not a valid integer.")
         sys.exit(1)
 
     analyzer = FinancialAnalyzer(DB_PATH)
@@ -598,7 +589,7 @@ def main():
     # Initialize variables to hold results from processing, to be used in report generation
     processed_stage2_companies_df = pd.DataFrame()
     processed_stage3_companies_df = pd.DataFrame()
-    analysis_df_all_ratios = pd.DataFrame() # To store the full analysis df if calculated
+    analysis_df = pd.DataFrame() # To store the full analysis df if calculated
 
     try:
         # Load all common data once
@@ -616,8 +607,6 @@ def main():
         if financial_df_full[financial_df_full['account_id'] == 'ifrs-full_Equity']['thstrm_amount'].isnull().any():
             logging.warning("Warning: NaN values found in 'thstrm_amount' for 'ifrs-full_Equity' in financial_df_full.")
         krx_sector_df = analyzer.load_krx_sector_data()
-        #outstanding_shares_df = analyzer.load_outstanding_shares() # Load here if needed before any valuation ratio calculation
-        #stock_prices_df = analyzer.load_stock_prices() # Load here if needed before any valuation ratio calculation
 
         if 'thstrm_amount' not in financial_df_full.columns:
             logging.error("'thstrm_amount' column not found in financial statements, cannot proceed with ratio calculation.")
@@ -646,8 +635,8 @@ def main():
 
         # --- Step 1: Initial Calculation of Ratios for Stage 1 & 2 Filtering ---
         logging.info("Performing initial ratio calculation for Stage 1 & 2 filtering (base ratios only)...")
-        initial_analysis_df = analyzer._calculate_base_ratios(financial_df_full, company_info_df, krx_sector_df)
-        processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(initial_analysis_df)
+        analysis_df = analyzer._calculate_base_ratios(financial_df_full, company_info_df, krx_sector_df)
+        processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df)
 
         if not processed_stage2_companies_df.empty:
             analyzer.save_filtered_companies(
@@ -659,7 +648,7 @@ def main():
             logging.info(f"Stage 1 & 2 initial filtering completed. {len(processed_stage2_companies_df)} companies passed and saved to 'filtered_companies' table for data fetching.")
         else:
             logging.info("No companies passed Stage 1 & 2 initial filtering. No data will be fetched.")
-            analysis_df_all_ratios = pd.DataFrame() # No companies, so no ratios
+            analysis_df = pd.DataFrame() # No companies, so no ratios
         
         # --- Step 2: Fetch Data for the Filtered Companies ---
         if not processed_stage2_companies_df.empty:
@@ -713,18 +702,15 @@ def main():
             logging.debug(f"Sample stock_prices_df head:\n{stock_prices_df.head()}")
             logging.debug(f"Shape of outstanding_shares_df after reload: {outstanding_shares_df.shape}")
             logging.debug(f"Shape of stock_prices_df after reload: {stock_prices_df.shape}")
-            logging.debug(f"Sample outstanding_shares_df head:
-{outstanding_shares_df.head()}")
-            logging.debug(f"Sample stock_prices_df head:
-{stock_prices_df.head()}")
+            logging.debug(f"Sample outstanding_shares_df head:{outstanding_shares_df.head()}")
+            logging.debug(f"Sample stock_prices_df head:{stock_prices_df.head()}")
 
             # --- Step 3: Recalculate All Ratios with Fetched Data for Final Stages ---
             logging.info("Recalculating all financial ratios, including valuation ratios, with newly fetched data...")
-            analysis_df_all_ratios = analyzer._calculate_base_ratios(financial_df_full, company_info_df, krx_sector_df)
-            analysis_df_all_ratios = analyzer._calculate_valuation_ratios(analysis_df_all_ratios, financial_df_full, outstanding_shares_df, stock_prices_df)
+            analysis_df = analyzer._calculate_valuation_ratios(analysis_df, financial_df_full, outstanding_shares_df, stock_prices_df)
             
             # Re-apply stage 1 & 2 filters to the fully calculated dataframe to ensure consistency for reporting
-            processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df_all_ratios)
+            processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df)
             if not processed_stage2_companies_df.empty:
                 # Update saved filtered companies, though they should be largely the same
                 analyzer.save_filtered_companies(
@@ -746,9 +732,9 @@ def main():
             logging.info("No companies passed Stage 1 & 2, so Stage 3 cannot proceed.")
             processed_stage3_companies_df = pd.DataFrame() # Ensure this is empty
         else:
-            # Filter analysis_df_all_ratios for only those companies that passed Stage 1&2
-            analysis_df_stage3 = analysis_df_all_ratios[
-                analysis_df_all_ratios['corp_code'].isin(companies_for_stage3_df['corp_code'])
+            # Filter analysis_df for only those companies that passed Stage 1&2
+            analysis_df_stage3 = analysis_df[
+                analysis_df['corp_code'].isin(companies_for_stage3_df['corp_code'])
             ].copy()
             processed_stage3_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
 
