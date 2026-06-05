@@ -48,9 +48,9 @@ export TARGET_REPRT_CODE="${REPRT_CODE}"
         echo "Warning: .env file not found at ${PROJECT_ROOT}/.env"
     fi
 
-    echo "KRX_ID in shell: ${KRX_ID}"
-    echo "KRX_PW in shell: ${KRX_PW}"
-    echo "DART_API_KEY in shell: ${DART_API_KEY}"
+
+
+
 
     # 1. Fetch KRX sector data (if uncommented in the future)
     # echo "Running krx_sector/get_krx_sector_data_final.py..."

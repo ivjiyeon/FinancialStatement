@@ -4,6 +4,7 @@ import pandas as pd
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), '../.env'))
 from pykrx.stock import get_market_ohlcv_by_ticker, get_market_fundamental_by_ticker
 
 # Setup logging
@@ -31,8 +32,12 @@ def test_fetch_data(stock_code, trade_date_str):
         logging.error(f"Error during pykrx test for {stock_code} on {trade_date_str}: {e}")
 
 if __name__ == "__main__":
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../.env'))
-    
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), '../.env'))
+
+    if 'KRX_ID' not in os.environ or 'KRX_PW' not in os.environ:
+        logging.warning("KRX_ID or KRX_PW not set in environment. pykrx may fail.")
+        logging.warning("Please set KRX_ID and KRX_PW environment variables.")
+
     # Test with Samsung Electronics on a known past date
     test_fetch_data("005930", "20240524")
     logging.info("Pykrx basic test finished.")

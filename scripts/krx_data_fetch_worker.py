@@ -21,17 +21,7 @@ def fetch_and_store_last_day_ohlcv_for_stock_prices_data(db_path: Path, stock_co
         krx_id = os.getenv('KRX_ID')
         krx_pw = os.getenv('KRX_PW')
 
-        if not krx_id or not krx_pw:
-            logging.error(f"KRX_ID or KRX_PW environment variables are not set for krx_data_fetch_worker.py. Cannot fetch KRX data for {stock_code}.")
-            return False
-
-        try:
-            stock.login(krx_id, krx_pw)
-            logging.info(f"Successfully logged into KRX for {stock_code}.")
-        except Exception as login_e:
-            logging.error(f"Failed to log into KRX for {stock_code}: {login_e}. Check KRX_ID and KRX_PW environment variables.")
-            return False
-
+        logging.info(f"fetching {stock_code} prices fom {start_date} to {end_date}")
         df = stock.get_market_ohlcv_by_date(start_date, end_date, stock_code)
         logging.info(f"Successfully retrieved OHLCV data for {stock_code} ({len(df)} records).")
 

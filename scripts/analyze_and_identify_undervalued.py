@@ -3,13 +3,9 @@ import os
 import sqlite3
 import pandas as pd
 import logging
-import argparse
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
-from dotenv import load_dotenv
-import subprocess
-import requests
-from pykrx import stock
 from dotenv import load_dotenv
 
 
@@ -706,22 +702,22 @@ def main():
             logging.debug(f"Sample stock_prices_df head:{stock_prices_df.head()}")
 
             # --- Step 3: Recalculate All Ratios with Fetched Data for Final Stages ---
-            logging.info("Recalculating all financial ratios, including valuation ratios, with newly fetched data...")
-            analysis_df = analyzer._calculate_valuation_ratios(analysis_df, financial_df_full, outstanding_shares_df, stock_prices_df)
+            #logging.info("Recalculating all financial ratios, including valuation ratios, with newly fetched data...")
+            #analysis_df = analyzer._calculate_valuation_ratios(analysis_df, financial_df_full, outstanding_shares_df, stock_prices_df)
             
             # Re-apply stage 1 & 2 filters to the fully calculated dataframe to ensure consistency for reporting
-            processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df)
-            if not processed_stage2_companies_df.empty:
-                # Update saved filtered companies, though they should be largely the same
-                analyzer.save_filtered_companies(
-                    processed_stage2_companies_df['corp_code'].tolist(),
-                    TARGET_BSNS_YEAR,
-                    TARGET_REPRT_CODE,
-                    append=False
-                )
-                logging.info(f"Final Stage 1 & 2 applied. {len(processed_stage2_companies_df)} companies still pass. Proceeding to Stage 3.")
-            else:
-                logging.info("No companies passed Stage 1 & 2 after re-calculating with fetched data. Stage 3 will not proceed.")
+            #processed_stage2_companies_df = analyzer._apply_stage1_and_2_filters(analysis_df)
+            #if not processed_stage2_companies_df.empty:
+            #    # Update saved filtered companies, though they should be largely the same
+            #    analyzer.save_filtered_companies(
+            #        processed_stage2_companies_df['corp_code'].tolist(),
+            #        TARGET_BSNS_YEAR,
+            #        TARGET_REPRT_CODE,
+            #        append=False
+            #    )
+            #    logging.info(f"Final Stage 1 & 2 applied. {len(processed_stage2_companies_df)} companies still pass. Proceeding to Stage 3.")
+            #else:
+            #    logging.info("No companies passed Stage 1 & 2 after re-calculating with fetched data. Stage 3 will not proceed.")
 
 
         # --- Stage 3: Valuation Metrics Check ---
@@ -733,10 +729,11 @@ def main():
             processed_stage3_companies_df = pd.DataFrame() # Ensure this is empty
         else:
             # Filter analysis_df for only those companies that passed Stage 1&2
-            analysis_df_stage3 = analysis_df[
-                analysis_df['corp_code'].isin(companies_for_stage3_df['corp_code'])
-            ].copy()
-            processed_stage3_companies_df = analyzer._apply_stage3_filters(analysis_df_stage3)
+            #analysis_df_stage3 = analysis_df[
+            #    analysis_df['corp_code'].isin(companies_for_stage3_df['corp_code'])
+            #].copy()
+            processed_stage2_companies_df = analyzer._calculate_valuation_ratios(processed_stage2_companies_df, financial_df_full, outstanding_shares_df, stock_prices_df)
+            processed_stage3_companies_df = analyzer._apply_stage3_filters(processed_stage2_companies_df) #analysis_df_stage3)
 
         if not processed_stage3_companies_df.empty:
             analyzer.save_filtered_companies(
@@ -760,7 +757,7 @@ def main():
                 if col in display_df_healthy.columns:
                     display_df_healthy[col] = pd.to_numeric(display_df_healthy[col], errors='coerce')
                     display_df_healthy[col] = display_df_healthy[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-            final_report_lines.append(display_df_healthy.to_string(index=False))
+            final_report_lines.append(display_df_healthy.to_string(index=False, col_space=10))
             final_report_lines.append("") # Add a blank line for readability
         
         if not processed_stage3_companies_df.empty:
@@ -773,7 +770,7 @@ def main():
                 if col in display_df_undervalued.columns:
                     display_df_undervalued[col] = pd.to_numeric(display_df_undervalued[col], errors='coerce')
                     display_df_undervalued[col] = display_df_undervalued[col].apply(lambda x: f'{x:.2f}' if pd.notna(x) else 'N/A')
-            final_report_lines.append(display_df_undervalued.to_string(index=False))
+            final_report_lines.append(display_df_undervalued.to_string(index=False, col_space=10))
 
 
         # If no companies were found in any relevant stage for the requested report type, or if no stages were specified for reporting

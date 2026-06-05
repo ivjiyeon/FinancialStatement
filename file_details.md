@@ -58,6 +58,8 @@ This directory contains general utility scripts for the project.
 
 - `analyze_and_identify_undervalued.log`: Log file for the financial analysis script.
 - `analyze_and_identify_undervalued.py`: Python script for analyzing financial data. The `FinancialAnalyzer` class has been refactored to separate base ratio calculations (`_calculate_base_ratios`) from valuation ratio calculations (`_calculate_valuation_ratios`), improving modularity and efficiency. It outputs formatted reports for Healthy and Undervalued Companies, or a specific message if no companies are found. Dynamically determines report year/quarter. Healthy Companies report now includes sector classification, and both reports feature improved spacing and metric formatting.
+    - Increased the data fetching window for KRX stock prices from 7 days to 30 days to resolve `N/A` values for PER and PBR by ensuring more robust `close_price` data.
+    - Added `col_space=10` to `to_string()` method calls when generating tables for "Healthy Companies" and "Undervalued Companies" to improve spacing and readability.
 - `financial_metrics.py`: Module containing functions for calculating financial metrics like PER, PBR, EPS, and BPS. (Updated to fix SQL parameter binding error and include EPS/BPS returns).
 
     - `clear_analysis_tables.py`: Python script to clear specific analysis-related tables (`outstanding_shares`, `filtered_companies`, `stock_prices`) in the database.
@@ -65,6 +67,7 @@ This directory contains general utility scripts for the project.
 - `krx_data_fetch_worker.py`: Helper script executed within `venv_krx` to fetch stock prices and outstanding shares using `pykrx`. It now explicitly handles KRX login using environment variables `KRX_ID` and `KRX_PW`, and includes improved error handling for robust data fetching.
    - `migrate_db.py`: Script used for migrating data from the old `financial_statements` table to the new `statement_metadata` and `financial_statement_items` tables.
 - `ko_stocks_analysis.sh`: Shell script to execute the comprehensive financial analysis process. It orchestrates a single run of the refactored `analyze_and_identify_undervalued.py` script, which now handles all stages of filtering and data fetching internally. Output is redirected to `scripts/run_all_process.log` and the final report is extracted for delivery.
+    - Removed verbose echo statements for `KRX_ID`, `KRX_PW`, and `DART_API_KEY` to prevent them from appearing in the final report.
 
 ## Virtual Environment Directories
 
